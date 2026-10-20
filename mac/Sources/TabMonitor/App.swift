@@ -53,6 +53,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !problems.isEmpty {
             logger.error("CGVirtualDisplay no disponible: \(problems.joined(separator: "; "), privacy: .public)")
         }
+
+        // Para diagnosticar sin tocar el menú: open TabMonitor.app --args --activate
+        if CommandLine.arguments.contains("--activate") { activate() }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -96,9 +99,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !online {
                 logger.error("el monitor no tomó el modo pedido; modos: \(created.availableModes().joined(separator: ", "), privacy: .public)")
             }
-            if !DisplayLayout.place(created.displayID, side: .right) {
+            logger.notice("pantallas al crear: \(DisplayLayout.describe(), privacy: .public)")
+            if !(await DisplayLayout.extend(created.displayID, side: .right)) {
                 logger.error("no se pudo ubicar el monitor a la derecha")
             }
+            guard self.display === created else { return }
+            logger.notice("pantallas al ubicar: \(DisplayLayout.describe(), privacy: .public)")
             self.starting = false
             self.refreshMenu()
             let b = created.bounds, px = created.pixelSize

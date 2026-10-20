@@ -1,0 +1,9 @@
+TabMonitor
+Licencia Apache 2.0 (ver LICENSE).
+
+Este proyecto incluye código derivado de Sill (https://github.com/Saffsanity/sill),
+licencia Apache 2.0.
+
+Archivos derivados de Sill:
+- mac/Sources/TabMonitor/VirtualDisplay.swift
+  (de Sources/SillHost/VirtualDisplay.swift; productID por defecto y etiqueta de la cola modificados)

@@ -1,0 +1,14 @@
+# mac
+mac/.build/
+mac/.swiftpm/
+*.xcodeproj/xcuserdata/
+*.h264
+
+# android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
+
+.DS_Store

@@ -46,10 +46,41 @@ el reloj de la Mac, menos el vsync de captura: incluye la Mac y el transporte.
 | USB + adb (llegada − captura+codificación en la Mac) | 2–4 ms | 2–4 ms |
 | Decode en la tablet | 18–19 ms | 13–14 ms |
 | Punta a punta hasta soltar el buffer | 45–47 ms (p95 58–62) | 25–29 ms (p95 35–49) |
-| Hasta que se ve (vsync de la tablet) | +0–17 ms, sin medir | igual |
+| Soltar → pantalla (present fence de SurfaceFlinger) | ~25 ms (p95 30–33) | igual |
 
 El cable no influye: la tablet negocia USB 3 a 5 Gb/s (por un hub USB 3) y el video usa menos de
 35 Mbps.
+
+### Tramo de pantalla
+
+`dumpsys SurfaceFlinger --latency 'SurfaceView - dev.tabmonitor/dev.tabmonitor.MainActivity#0'`
+da, por frame, la hora deseada de presentación (la que pasa el visor al soltar el buffer) y la del
+present fence. La diferencia es lo que tarda Android en mostrarlo: esperar el vsync, componer y
+presentar en el siguiente. Medido: 25 ms de promedio, p95 33, p99 34, máx 48 (1452 frames). No se
+puede acortar sin root. `OnFrameRenderedListener` no sirve para esto: en `OMX.qcom` reporta ~45 ms
+(unos 20 ms después del present fence) y en `c2.qti` devuelve el PTS × 1000.
+
+Con `releaseOutputBuffer(i, true)` la Surface usa el PTS (la hora de captura, en el reloj de la
+Mac) como hora deseada de presentación; el visor pasa la hora actual de la tablet.
+
+### Prueba larga (2026-10-21, calidad Rápida)
+
+6,3 minutos de uso real (189 ventanas de 2 s, 164 con video, 32 fps de promedio).
+
+| Medida | Al soltar el buffer | Estimado en pantalla (+25 ms) |
+|---|---|---|
+| Promedio ponderado por frames | 24,3 ms | ~49 ms |
+| Máximo por ventana: mediana / p90 | 51 / 62 ms | ~76 / ~87 ms |
+| Peor ventana | 113 ms | ~140 ms |
+| Ventanas con máximo > 80 ms al soltar | 2 de 164 | — |
+
+Decode 12,9 ms y llegada 10,5 ms de promedio; ningún frame descartado. Los peores picos son con
+muy poco movimiento (0,1 Mbps): la Mac captura y codifica en 5–12 ms, pero la llegada a la tablet
+tiene un p95 de 66–97 ms. El primer frame después de un reposo tarda en el camino (USB, adb o la
+tablet saliendo de reposo).
+
+Contra el objetivo (promedio < 45, p95 < 60, nunca > 80 en pantalla): el promedio queda en ~49 y
+los picos lo superan. El objetivo suponía 0–17 ms para mostrar; son 25.
 
 ## Mediciones de punta a punta (hito 3)
 

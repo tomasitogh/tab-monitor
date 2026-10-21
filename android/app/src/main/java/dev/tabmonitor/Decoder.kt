@@ -13,7 +13,7 @@ import java.util.ArrayDeque
 
 /**
  * H.264 con MediaCodec asíncrono sobre la Surface: cada frame decodificado va a la pantalla
- * apenas sale (releaseOutputBuffer(i, true)).
+ * apenas sale (releaseOutputBuffer con la hora actual).
  *
  * Todo el estado vive en el hilo del codec. Los frames comprimidos no se pueden saltear (los que
  * siguen dependen de ellos): si se acumulan, se tiran todos y se pide un keyframe.
@@ -153,9 +153,13 @@ class Decoder(private val surface: Surface, private val listener: Listener, priv
             if (codec !== this@Decoder.codec) return
             val now = System.nanoTime()
             queuedAt.remove(info.presentationTimeUs)?.let { listener.onDecoded(now - it) }
-            codec.releaseOutputBuffer(index, true)
-            // La hora de mostrar es la de soltar el buffer: OnFrameRenderedListener no sirve en
-            // c2.qti.avc.decoder (devuelve el PTS × 1000). El frame aparece en el vsync siguiente.
+            // Con `true` la Surface toma el PTS (la hora de captura, en el reloj de la Mac) como hora
+            // deseada de presentación; con la hora actual de la tablet se muestra cuanto antes y
+            // SurfaceFlinger descarta el frame si llega otro antes del vsync.
+            codec.releaseOutputBuffer(index, now)
+            // La latencia se mide al soltar el buffer. OnFrameRenderedListener no sirve: en c2.qti
+            // devuelve el PTS × 1000 y en OMX.qcom reporta ~20 ms después del present fence. Hasta
+            // verse faltan ~25 ms más (dumpsys SurfaceFlinger --latency, docs/latency.md).
             listener.onRendered(info.presentationTimeUs, now)
         }
 

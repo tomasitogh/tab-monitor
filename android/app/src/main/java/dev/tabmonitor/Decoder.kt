@@ -59,23 +59,23 @@ class Decoder(private val surface: Surface, private val listener: Listener, priv
 
     private fun onFrame(frame: Wire.Incoming.Video) {
         if (waitingForKeyframe) {
-            if (!frame.keyframe) return
+            if (!frame.keyframe) return frame.release()
             waitingForKeyframe = false
         }
         if (codec == null && !start(frame)) {
             waitingForKeyframe = true
-            return
+            return frame.release()
         }
         if (frame.keyframe) {
             // Un keyframe vuelve todo lo anterior innecesario.
             if (pending.isNotEmpty()) listener.onDropped(pending.size)
-            pending.clear()
+            dropPending()
         }
         pending.add(frame)
         if (pending.size > MAX_PENDING) {
             Log.w(TAG, "el decoder no da abasto: se tiran ${pending.size} frames y se pide un keyframe")
             listener.onDropped(pending.size)
-            pending.clear()
+            dropPending()
             waitingForKeyframe = true
             listener.onKeyframeNeeded()
             return
@@ -89,23 +89,25 @@ class Decoder(private val surface: Surface, private val listener: Listener, priv
             val frame = pending.poll()!!
             val index = freeInputs.poll()!!
             val buffer = codec.getInputBuffer(index) ?: continue
-            if (frame.annexB.size > buffer.capacity()) {
-                Log.e(TAG, "frame de ${frame.annexB.size} bytes no entra en ${buffer.capacity()}; se pide keyframe")
+            if (frame.length > buffer.capacity()) {
+                Log.e(TAG, "frame de ${frame.length} bytes no entra en ${buffer.capacity()}; se pide keyframe")
+                frame.release()
                 freeInputs.addFirst(index)
                 waitingForKeyframe = true
                 listener.onKeyframeNeeded()
                 return
             }
             buffer.clear()
-            buffer.put(frame.annexB)
+            buffer.put(frame.data, frame.offset, frame.length)
+            frame.release()
             queuedAt[frame.captureMicros] = System.nanoTime()
-            codec.queueInputBuffer(index, 0, frame.annexB.size, frame.captureMicros, 0)
+            codec.queueInputBuffer(index, 0, frame.length, frame.captureMicros, 0)
         }
     }
 
     /** Crea el codec con el SPS y el PPS del primer keyframe. */
     private fun start(keyframe: Wire.Incoming.Video): Boolean {
-        val nals = splitNals(keyframe.annexB)
+        val nals = splitNals(keyframe.annexB())
         val sps = nals.firstOrNull { nalType(it) == 7 }
         val pps = nals.firstOrNull { nalType(it) == 8 }
         if (sps == null || pps == null || width == 0) {
@@ -183,8 +185,13 @@ class Decoder(private val surface: Surface, private val listener: Listener, priv
         }
         codec = null
         freeInputs.clear()
-        pending.clear()
+        dropPending()
         queuedAt.clear()
+    }
+
+    private fun dropPending() {
+        pending.forEach { it.release() }
+        pending.clear()
     }
 
     companion object {

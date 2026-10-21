@@ -15,9 +15,15 @@ import java.util.concurrent.TimeUnit
  * El socket a la Mac (127.0.0.1:8081, que `adb reverse` lleva por el cable). Reintenta cada
  * segundo hasta que la Mac escuche; al conectar manda `hello`, después `ping` cada 1 s y `stats`
  * cada 2 s (PROTOCOL.md).
+ *
+ * Al desenchufar el cable, `adbd` no cierra el socket: la conexión parece viva y la imagen queda
+ * congelada. Por eso se corta si no llega nada en [SILENCE_MILLIS] (el pong llega cada segundo
+ * aunque la pantalla esté quieta), y el visor la corta al instante con [drop] cuando Android avisa
+ * que se desconectó el USB.
  */
 class Connection(private val hello: ByteArray, private val listener: Listener) {
     interface Listener {
+        /** Llegó el primer mensaje de la Mac: no alcanza con conectar, `adbd` acepta sin cable. */
         fun onConnected()
         fun onConfig(config: Wire.Incoming.Config)
         fun onVideo(frame: Wire.Incoming.Video)
@@ -27,11 +33,14 @@ class Connection(private val hello: ByteArray, private val listener: Listener) {
     }
 
     val clock = Clock()
+    private val pool = Wire.BufferPool()
 
     @Volatile private var running = true
     @Volatile private var socket: Socket? = null
     @Volatile private var out: OutputStream? = null
     private var timers: ScheduledExecutorService? = null
+    @Volatile private var lastReceived = 0L
+    @Volatile private var dropReason: String? = null
 
     private val thread = Thread({ loop() }, "TabMonitor-net").apply {
         priority = Thread.MAX_PRIORITY
@@ -42,6 +51,13 @@ class Connection(private val hello: ByteArray, private val listener: Listener) {
         running = false
         try { socket?.close() } catch (_: IOException) {}
         thread.interrupt()
+    }
+
+    /** Corta la conexión actual (después se reintenta como siempre). */
+    fun drop(reason: String) {
+        val socket = socket ?: return
+        dropReason = reason
+        try { socket.close() } catch (_: IOException) {}
     }
 
     fun requestKeyframe() = send(Wire.key())
@@ -61,29 +77,37 @@ class Connection(private val hello: ByteArray, private val listener: Listener) {
     private fun loop() {
         while (running) {
             val socket = Socket()
+            var connected = false
             try {
                 socket.tcpNoDelay = true
                 socket.receiveBufferSize = 1 shl 20
                 socket.connect(InetSocketAddress("127.0.0.1", PORT), 1000)
                 this.socket = socket
                 out = BufferedOutputStream(socket.getOutputStream())
-                Log.i(TAG, "conectado a la Mac")
                 clock.reset()
-                listener.onConnected()
+                lastReceived = Clock.nowMillis()
                 send(hello)
                 startTimers()
 
-                val reader = Wire.Reader(socket.getInputStream())
+                val reader = Wire.Reader(socket.getInputStream(), pool)
                 while (running) {
-                    when (val msg = reader.next()) {
+                    val msg = reader.next()
+                    lastReceived = Clock.nowMillis()
+                    if (!connected) {
+                        connected = true
+                        Log.i(TAG, "conectado a la Mac")
+                        listener.onConnected()
+                    }
+                    when (msg) {
                         is Wire.Incoming.Video -> listener.onVideo(msg)
                         is Wire.Incoming.Config -> listener.onConfig(msg)
                         is Wire.Incoming.Pong -> clock.onPong(msg.ts, Clock.nowMillis(), msg.mac)
                     }
                 }
             } catch (e: IOException) {
-                val reason = if (e is EOFException) "la Mac cerró la conexión" else e.message ?: e.toString()
-                if (this.socket != null) {
+                val reason = dropReason ?: if (e is EOFException) REASON_CLOSED else e.message ?: e.toString()
+                dropReason = null
+                if (connected) {
                     Log.i(TAG, "desconectado: $reason")
                     listener.onDisconnected(reason)
                 }
@@ -101,6 +125,9 @@ class Connection(private val hello: ByteArray, private val listener: Listener) {
         timers = Executors.newSingleThreadScheduledExecutor().apply {
             scheduleWithFixedDelay({ send(Wire.ping(Clock.nowMillis())) }, 0, 1, TimeUnit.SECONDS)
             scheduleWithFixedDelay({ listener.collectStats()?.let(::send) }, 2, 2, TimeUnit.SECONDS)
+            scheduleWithFixedDelay({
+                if (Clock.nowMillis() - lastReceived > SILENCE_MILLIS) drop(REASON_SILENT)
+            }, SILENCE_MILLIS, 500, TimeUnit.MILLISECONDS)
         }
     }
 
@@ -112,6 +139,10 @@ class Connection(private val hello: ByteArray, private val listener: Listener) {
     companion object {
         const val TAG = "TabMonitor"
         const val PORT = 8081
+        const val SILENCE_MILLIS = 3000L
+        const val REASON_UNPLUGGED = "Se desenchufó el cable"
+        const val REASON_SILENT = "La Mac no responde: puede estar dormida"
+        const val REASON_CLOSED = "TabMonitor se cerró en la Mac"
     }
 }
 

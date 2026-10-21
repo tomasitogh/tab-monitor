@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import os
 
 let logger = Logger(subsystem: "dev.tabmonitor.mac", category: "app")
@@ -72,6 +73,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var displayForTablet = false
 
     private lazy var server = Server(port: port)
+    private lazy var bridge = AdbBridge(port: port)
+    private var bridgeState: AdbBridge.State = .waiting
+    private let openViewerItem = NSMenuItem(title: "Abrir visor en la tablet", action: #selector(openViewer), keyEquivalent: "")
+    private let loginItem = NSMenuItem(title: "Abrir al iniciar sesión", action: #selector(toggleLogin), keyEquivalent: "")
     private var streamer: Streamer?
     /// El hello de la tablet conectada, para volver a transmitir si el monitor se reactiva desde el menú.
     private var hello: Wire.Hello?
@@ -82,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                            accessibilityDescription: "TabMonitor")
 
         let menu = NSMenu()
+        menu.autoenablesItems = false
         stateItem.isEnabled = false
         menu.addItem(stateItem)
         clientItem.isEnabled = false
@@ -94,6 +100,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         qualityHeader.isEnabled = false
         menu.addItem(qualityHeader)
         for q in Quality.allCases { menu.addItem(qualityItems[q]!) }
+        menu.addItem(.separator())
+        openViewerItem.target = self
+        menu.addItem(openViewerItem)
+        loginItem.target = self
+        menu.addItem(loginItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Salir de TabMonitor", action: #selector(NSApplication.terminate(_:)),
                                 keyEquivalent: "q"))
@@ -123,12 +134,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showError("No se pudo abrir el puerto \(port).", detail: "\(error)")
         }
 
+        bridge.onState = { [weak self] state in
+            self?.bridgeState = state
+            self?.refreshMenu()
+        }
+        bridge.start()
+        let bridge = self.bridge
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil,
+                                                          queue: .main) { _ in
+            logger.notice("la Mac despertó")
+            bridge.refresh()
+        }
+
         // Para diagnosticar sin tocar el menú: open TabMonitor.app --args --activate
         if CommandLine.arguments.contains("--activate") { activate() }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        bridge.stop()
         deactivate()
+    }
+
+    @objc private func openViewer() {
+        bridge.openViewer()
+    }
+
+    /// SMAppService: la app tiene que estar en /Applications. macOS puede pedir aprobarla en
+    /// Ajustes del Sistema › General › Ítems de inicio.
+    @objc private func toggleLogin() {
+        let service = SMAppService.mainApp
+        do {
+            if service.status == .enabled {
+                try service.unregister()
+            } else {
+                try service.register()
+            }
+        } catch {
+            showError("No se pudo cambiar el inicio automático.", detail: "\(error)")
+        }
+        refreshMenu()
     }
 
     /// Se aplica en caliente: la transmisión vuelve a arrancar con un `config` nuevo.
@@ -274,8 +318,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             stateItem.title = "Monitor: apagado"
             toggleItem.title = "Activar monitor"
         }
-        clientItem.title = streamer != nil ? "Tablet: transmitiendo" : "Tablet: esperando conexión"
+        clientItem.title = streamer != nil ? "Tablet: transmitiendo" : Self.describe(bridgeState)
+        if case .ready = bridgeState { openViewerItem.isEnabled = streamer == nil } else { openViewerItem.isEnabled = false }
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         for (q, item) in qualityItems { item.state = q == quality ? .on : .off }
+    }
+
+    private static func describe(_ state: AdbBridge.State) -> String {
+        switch state {
+        case .noAdb: return "Falta adb: brew install android-platform-tools"
+        case .waiting: return "Tablet: enchufala por USB"
+        case .unauthorized: return "Tablet: aceptá \"Permitir depuración USB\" en la tablet"
+        case .preparing(let what): return "Tablet: \(what)"
+        case .ready: return "Tablet: esperando al visor"
+        case .failed(let why): return "Tablet: \(why) (reintentando)"
+        }
     }
 
     private func showError(_ message: String, detail: String) {

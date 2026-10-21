@@ -9,7 +9,7 @@ Cada hito se prueba en la tablet real antes de pasar al siguiente. El MVP es el 
 | 2. Captura y codificación | hecho, probado en la Mac (2026-10-20) |
 | 3. Visor Android por cable (MVP) | hecho, probado en la tablet (2026-10-21) |
 | 4. Latencia excelente | hecho (2026-10-21): ~49 ms en pantalla en Rápida; picos ocasionales por adb |
-| 5. Enchufar y usar | — |
+| 5. Enchufar y usar | hecho, probado con la tablet (2026-10-21) |
 | 6. Toque y lápiz (opcional) | — |
 
 ## Hito 0: validaciones
@@ -180,4 +180,61 @@ Reemplazar `adb reverse` por AOA: USB directo con endpoints bulk, sin `adbd` en 
   0x2D00/0x2D01), lo que puede convivir con adb o no según el modo.
 - Cómo empezar: una prueba mínima que mande frames por AOA y mida la llegada contra adb, antes
   de tocar la app.
+
+## Hito 5: enchufar y usar
+
+Alcance: la app de Mac instalada y abierta; enchufar la tablet (con depuración USB activa) y que
+funcione sola. Más robustez y consumo bajo de recursos. Fuera de alcance por ahora: otras
+tablets y otros tamaños, y la distribución.
+
+Criterio:
+- Con TabMonitor abierta, enchufar la tablet muestra el monitor sin tocar nada más: la Mac
+  instala o actualiza el visor si hace falta, aplica `adb reverse` y lo abre, aunque la
+  tablet esté bloqueada.
+- Si la tablet pide autorizar la depuración USB, el menú lo dice.
+- Desenchufar quita el monitor; volver a enchufar lo trae. Igual al abrir TabMonitor con la
+  tablet ya enchufada, al reiniciar el servidor de adb y al despertar la Mac.
+- Sin tablet, la tablet duerme normalmente y TabMonitor no consume CPU.
+- TabMonitor puede abrirse sola al iniciar sesión.
+- Consumo medido de la Mac (CPU, memoria, energía) en reposo y transmitiendo.
+
+Para probarlo: `mac/Scripts/make-app.sh --install --open` (compila también el visor y lo mete en
+la app) y enchufar la tablet.
+
+Resultado (2026-10-21): cumple.
+- AdbBridge escucha `adb track-devices`. Con la tablet autorizada instala o actualiza el visor
+  (compara el SHA-256 del APK instalado con el que trae la app), aplica `adb reverse` y lo abre.
+  Reintenta cada 5 s si algo falla y vuelve a levantar adb si se cae. adb se busca en Homebrew y
+  en el SDK de Android.
+- El menú muestra el estado de la tablet (enchufala, aceptá la depuración USB, instalando,
+  transmitiendo) y suma "Abrir visor en la tablet" y "Abrir al iniciar sesión" (SMAppService).
+- El visor se abre sobre la pantalla bloqueada y la enciende, la mantiene encendida solo con
+  conexión y se cierra solo a los 30 s sin la Mac. Un cartel grande en el centro dice si espera
+  a la Mac, si se desenchufó el cable o si la Mac no responde.
+- Al desenchufar, `adbd` no cierra el socket y la imagen quedaba congelada. Ahora el visor corta
+  al instante con el aviso de USB de Android, y como respaldo a los 3 s sin mensajes de la Mac
+  (también cubre la Mac dormida). Al despertar, la Mac vuelve a aplicar `reverse` y abre el
+  visor.
+
+Probado: desenchufar y enchufar (vuelve en ~1 s), enchufar con la tablet bloqueada, reposo y
+despertar de la Mac, reiniciar el servidor de adb (~7 s), reabrir TabMonitor con la tablet
+enchufada (~3 s), cerrar el visor a mano (no se reabre solo; queda el ítem del menú),
+actualización del visor al recompilar. Sin probar: abrir al iniciar sesión tras reiniciar.
+
+Con la tapa cerrada y la Mac enchufada, la tablet pasa a ser la pantalla principal: es lo que
+hace macOS con cualquier monitor externo.
+
+Consumo (2026-10-21, 60 fps de movimiento en Nítida salvo que se diga):
+
+| | Mac | Tablet (visor) |
+|---|---|---|
+| Sin tablet | 0 % CPU, 12 MB, 3 despertares/s | — |
+| Conectada, pantalla quieta | ~0 % | ~1,5 % |
+| Transmitiendo | TabMonitor 6 %, adb 4 %, replayd 3 % de un núcleo, más ~5 % de WindowServer; 15–22 MB | ~40 % de un núcleo (antes 57–70 %) |
+
+En la tablet, leer cada frame en un arreglo nuevo (y copiarlo otra vez para quitar el
+encabezado) generaba decenas de MB por segundo de basura; ahora los arreglos se reciclan de un
+pool y el decoder copia directo desde ahí. Queda: ~20 % en hilos internos de MediaCodec, ~12 %
+copiando al buffer del codec, ~5 % de red. En la Mac la codificación la hace el motor de video;
+evitar la copia que queda por frame ganaría menos de 1 %.
 

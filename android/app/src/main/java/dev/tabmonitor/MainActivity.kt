@@ -1,9 +1,17 @@
 package dev.tabmonitor
 
 import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.Gravity
 import android.view.SurfaceHolder
@@ -13,26 +21,40 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
  * El visor: una SurfaceView a pantalla completa donde el Decoder dibuja el monitor virtual.
  * La conexión vive mientras existe la Surface; al salir de la app se corta y la Mac quita el monitor.
  * Un toque muestra u oculta las estadísticas.
+ *
+ * Enchufar y usar: la Mac lo abre por adb aunque la tablet esté bloqueada (showWhenLocked y
+ * turnScreenOn en el manifiesto). La pantalla queda encendida solo mientras hay conexión, y si la
+ * Mac no aparece en [IDLE_FINISH_MS] el visor se cierra para que la tablet vuelva a lo suyo.
  */
 class MainActivity : Activity(), SurfaceHolder.Callback, Connection.Listener, Decoder.Listener {
     private lateinit var surfaceView: SurfaceView
+    /** Estadísticas chicas arriba a la izquierda, con un toque. */
     private lateinit var statusText: TextView
+    /** El cartel grande del centro: esperando, desconectado. */
+    private lateinit var card: LinearLayout
+    private lateinit var cardTitle: TextView
+    private lateinit var cardDetail: TextView
 
     private var connection: Connection? = null
     private var decoder: Decoder? = null
     private val stats = Stats()
     @Volatile private var showStats = false
     @Volatile private var streaming = false
+    private val main = Handler(Looper.getMainLooper())
+    private val finishIfIdle = Runnable {
+        Log.i(TAG, "sin la Mac por ${IDLE_FINISH_MS / 1000} s: se cierra el visor")
+        finish()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         surfaceView = SurfaceView(this)
         statusText = TextView(this).apply {
             setTextColor(Color.WHITE)
@@ -40,6 +62,31 @@ class MainActivity : Activity(), SurfaceHolder.Callback, Connection.Listener, De
             textSize = 16f
             setPadding(24, 16, 24, 16)
         }
+        cardTitle = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            textSize = 34f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+        }
+        cardDetail = TextView(this).apply {
+            setTextColor(Color.argb(220, 255, 255, 255))
+            textSize = 22f
+            gravity = Gravity.CENTER
+            setPadding(0, 24, 0, 0)
+        }
+        card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(72, 56, 72, 56)
+            background = GradientDrawable().apply {
+                setColor(Color.argb(230, 32, 32, 36))
+                cornerRadius = 36f
+            }
+            addView(cardTitle)
+            addView(cardDetail)
+        }
+        val center = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT)
+        center.gravity = Gravity.CENTER
         val fill = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         val corner = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT)
         corner.gravity = Gravity.TOP or Gravity.START
@@ -47,6 +94,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback, Connection.Listener, De
             setBackgroundColor(Color.BLACK)
             addView(surfaceView, fill)
             addView(statusText, corner)
+            addView(card, center)
             setOnClickListener {
                 showStats = !showStats
                 updateOverlay(null)
@@ -54,7 +102,25 @@ class MainActivity : Activity(), SurfaceHolder.Callback, Connection.Listener, De
         }
         setContentView(root)
         surfaceView.holder.addCallback(this)
-        updateOverlay("Esperando a la Mac…")
+        showCard("Esperando a la Mac", "Abrí TabMonitor en la Mac y dejá el cable enchufado.")
+        updateOverlay(null)
+        main.postDelayed(finishIfIdle, IDLE_FINISH_MS)
+        val filter = IntentFilter(USB_STATE)
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(usbState, filter, Context.RECEIVER_NOT_EXPORTED)
+        else registerReceiver(usbState, filter)
+    }
+
+    override fun onDestroy() {
+        main.removeCallbacks(finishIfIdle)
+        unregisterReceiver(usbState)
+        super.onDestroy()
+    }
+
+    /** Android avisa al instante cuando se desconecta el USB; adbd no cierra el socket. */
+    private val usbState = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (!intent.getBooleanExtra("connected", true)) connection?.drop(Connection.REASON_UNPLUGGED)
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -113,7 +179,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback, Connection.Listener, De
 
     override fun onConnected() {
         stats.reset()
-        updateOverlay("Conectado, esperando video…")
+        showCard("Conectado", "Esperando la imagen…")
+        runOnUiThread {
+            main.removeCallbacks(finishIfIdle)
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     override fun onConfig(config: Wire.Incoming.Config) {
@@ -122,13 +192,18 @@ class MainActivity : Activity(), SurfaceHolder.Callback, Connection.Listener, De
     }
 
     override fun onVideo(frame: Wire.Incoming.Video) {
-        stats.received(frame.annexB.size, frame.captureMicros, System.nanoTime(), connection?.clock?.offsetMillis())
-        decoder?.submit(frame)
+        stats.received(frame.length, frame.captureMicros, System.nanoTime(), connection?.clock?.offsetMillis())
+        decoder?.submit(frame) ?: frame.release()
     }
 
     override fun onDisconnected(reason: String) {
         streaming = false
-        updateOverlay("Esperando a la Mac… ($reason)")
+        showCard(reason, "Volvé a enchufar el cable o despertá la Mac.\nSi no, el visor se cierra solo en ${IDLE_FINISH_MS / 1000} segundos.")
+        runOnUiThread {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            main.removeCallbacks(finishIfIdle)
+            main.postDelayed(finishIfIdle, IDLE_FINISH_MS)
+        }
     }
 
     override fun collectStats(): ByteArray? {
@@ -148,7 +223,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback, Connection.Listener, De
         stats.rendered(captureMicros, renderNanos, connection?.clock?.offsetMillis())
         if (!streaming) {
             streaming = true
-            updateOverlay(null)
+            showCard(null, null)
         }
     }
 
@@ -162,11 +237,21 @@ class MainActivity : Activity(), SurfaceHolder.Callback, Connection.Listener, De
     private fun updateOverlay(status: String?) = runOnUiThread {
         val text = status ?: if (showStats) stats.lastSummary else null
         statusText.text = text ?: ""
-        statusText.visibility = if (text.isNullOrEmpty() || (streaming && status == null && !showStats)) View.GONE else View.VISIBLE
+        statusText.visibility = if (text.isNullOrEmpty()) View.GONE else View.VISIBLE
+    }
+
+    /** El cartel del centro; null lo oculta. */
+    private fun showCard(title: String?, detail: String?) = runOnUiThread {
+        card.visibility = if (title == null) View.GONE else View.VISIBLE
+        cardTitle.text = title ?: ""
+        cardDetail.text = detail ?: ""
     }
 
     companion object {
         const val TAG = "TabMonitor"
+        const val IDLE_FINISH_MS = 30_000L
+        /** android.hardware.usb.action.USB_STATE: oculta en el SDK, pero es una difusión del sistema. */
+        const val USB_STATE = "android.hardware.usb.action.USB_STATE"
     }
 }
 

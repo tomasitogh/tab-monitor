@@ -5,6 +5,10 @@
 #   Scripts/make-app.sh --install          …y reemplaza /Applications/TabMonitor.app (cierra la copia abierta)
 #   Scripts/make-app.sh --install --open   …y la abre
 #   TABMONITOR_SIGN_IDENTITY='Apple Development: …' Scripts/make-app.sh   (otra identidad)
+#   TABMONITOR_SKIP_APK=1 Scripts/make-app.sh   (sin compilar el visor de Android)
+#
+# El visor de Android (android/) se compila y viaja dentro de la app con su SHA-256: AdbBridge lo
+# instala o actualiza en la tablet cuando el hash no coincide con el instalado.
 #
 # Los permisos de macOS (Grabación de pantalla, más adelante Accesibilidad) quedan atados al
 # bundle ID y al certificado. Firmar siempre con el mismo Apple Development evita que macOS los
@@ -33,6 +37,15 @@ cp Packaging/Info.plist "$stage/Contents/Info.plist"
 build_number="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" "$stage/Contents/Info.plist"
 printf 'APPL????' > "$stage/Contents/PkgInfo"
+
+if [ "${TABMONITOR_SKIP_APK:-0}" != 1 ]; then
+    studio_jdk="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+    if [ -z "${JAVA_HOME:-}" ] && [ -d "$studio_jdk" ]; then export JAVA_HOME="$studio_jdk"; fi
+    (cd ../android && ./gradlew -q assembleDebug)
+    apk=../android/app/build/outputs/apk/debug/app-debug.apk
+    cp "$apk" "$stage/Contents/Resources/TabMonitor.apk"
+    shasum -a 256 "$apk" | awk '{ print $1 }' > "$stage/Contents/Resources/TabMonitor.apk.sha256"
+fi
 
 # La primera identidad Apple Development del llavero, por su hash SHA-1 (codesign rechaza un
 # nombre que comparten dos certificados válidos, como pasa tras una renovación).

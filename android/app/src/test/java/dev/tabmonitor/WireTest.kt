@@ -38,9 +38,20 @@ class WireTest {
         val v = reader.next() as Wire.Incoming.Video
         assertTrue(v.keyframe)
         assertEquals(1_000_000L, v.captureMicros)
-        assertArrayEquals(nal, v.annexB)
+        assertArrayEquals(nal, v.annexB())
         assertEquals(Wire.Incoming.Config("h264", 2560, 1600, 60, 35_000_000), reader.next())
         assertEquals(Wire.Incoming.Pong(123456, 987654), reader.next())
+    }
+
+    @Test fun pooledBuffersAreReused() {
+        val pool = Wire.BufferPool()
+        val video = hex("01 00 00 00 0B 00 00 00 00 00 00 00 00 01 AA BB")
+        val reader = Wire.Reader(ByteArrayInputStream(video + video), pool)
+        val first = reader.next() as Wire.Incoming.Video
+        assertArrayEquals(hex("AA BB"), first.annexB())
+        first.release()
+        val second = reader.next() as Wire.Incoming.Video
+        assertTrue(first.data === second.data)
     }
 
     @Test(expected = Wire.ProtocolException::class)

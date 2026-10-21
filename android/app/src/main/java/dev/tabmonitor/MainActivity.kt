@@ -122,7 +122,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback, Connection.Listener, De
     }
 
     override fun onVideo(frame: Wire.Incoming.Video) {
-        stats.received(frame.annexB.size)
+        stats.received(frame.annexB.size, frame.captureMicros, System.nanoTime(), connection?.clock?.offsetMillis())
         decoder?.submit(frame)
     }
 
@@ -180,6 +180,7 @@ class Stats {
     private var bytes = 0L
     private var dropped = 0
     private val latencies = ArrayList<Double>()
+    private val arrivals = ArrayList<Double>()
     private val decodes = ArrayList<Double>()
     @Volatile var lastSummary = ""
         private set
@@ -187,10 +188,14 @@ class Stats {
     @Synchronized fun reset() {
         since = System.nanoTime()
         rendered = 0; bytes = 0; dropped = 0
-        latencies.clear(); decodes.clear()
+        latencies.clear(); decodes.clear(); arrivals.clear()
     }
 
-    @Synchronized fun received(size: Int) { bytes += size }
+    /** Llegada = hora en que se terminó de leer el frame, en el reloj de la Mac, menos captura. */
+    @Synchronized fun received(size: Int, captureMicros: Long, arrivalNanos: Long, offsetMillis: Double?) {
+        bytes += size
+        if (offsetMillis != null) arrivals.add(arrivalNanos / 1e6 + offsetMillis - captureMicros / 1e3)
+    }
     @Synchronized fun dropped(count: Int) { dropped += count }
     @Synchronized fun decoded(nanos: Long) { decodes.add(nanos / 1e6) }
 
@@ -209,15 +214,18 @@ class Stats {
         val p95 = if (lat.isEmpty()) 0.0 else lat[minOf(lat.size - 1, lat.size * 95 / 100)]
         val max = lat.lastOrNull() ?: 0.0
         val decode = if (decodes.isEmpty()) 0.0 else decodes.average()
+        val arr = arrivals.sorted()
+        val arrAvg = if (arr.isEmpty()) 0.0 else arr.average()
+        val arrP95 = if (arr.isEmpty()) 0.0 else arr[minOf(arr.size - 1, arr.size * 95 / 100)]
         val fps = rendered / seconds
         val summary = String.format(java.util.Locale.ROOT,
-            "%.1f fps, %.1f Mbps, latencia %.1f / p95 %.1f / máx %.1f ms, decode %.1f ms, descartados %d, ping %s ms",
-            fps, bytes * 8 / seconds / 1e6, avg, p95, max, decode, dropped, clock?.bestRttMillis()?.toString() ?: "—")
+            "%.1f fps, %.1f Mbps, latencia %.1f / p95 %.1f / máx %.1f ms, llegada %.1f / p95 %.1f ms, decode %.1f ms, descartados %d, ping %s ms",
+            fps, bytes * 8 / seconds / 1e6, avg, p95, max, arrAvg, arrP95, decode, dropped, clock?.bestRttMillis()?.toString() ?: "—")
         val snap = Snapshot(fps, avg, p95, decode, dropped, summary)
         lastSummary = summary
         since = now
         rendered = 0; bytes = 0; dropped = 0
-        latencies.clear(); decodes.clear()
+        latencies.clear(); decodes.clear(); arrivals.clear()
         return snap
     }
 }

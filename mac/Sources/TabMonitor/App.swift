@@ -29,10 +29,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let productID: UInt32 = 0x0010
     private let port: UInt16 = 8081
 
+    /// Cuántos píxeles viajan. El monitor virtual es siempre 2560×1600; en Rápida, ScreenCaptureKit
+    /// lo escala a 1920×1200 y la tablet lo estira. Medido a 60 fps (docs/latency.md): Nítida
+    /// 45–47 ms de promedio, Rápida 25–29 ms, porque el encoder del M1 y el decoder de la tablet
+    /// tardan en proporción a los píxeles.
+    enum Quality: String, CaseIterable {
+        case sharp, fast
+
+        var title: String {
+            switch self {
+            case .sharp: return "Nítida (2560×1600)"
+            case .fast: return "Rápida (1920×1200)"
+            }
+        }
+
+        /// Ancho transmitido; nil es el del monitor.
+        var streamWidth: Int? { self == .fast ? 1920 : nil }
+    }
+
+    private var quality: Quality {
+        get { UserDefaults.standard.string(forKey: "quality").flatMap(Quality.init) ?? .sharp }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "quality") }
+    }
+
     private var statusItem: NSStatusItem!
     private let stateItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let clientItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let toggleItem = NSMenuItem(title: "", action: #selector(toggle), keyEquivalent: "")
+    private lazy var qualityItems: [Quality: NSMenuItem] = Dictionary(uniqueKeysWithValues: Quality.allCases.map { q in
+        let item = NSMenuItem(title: q.title, action: #selector(chooseQuality(_:)), keyEquivalent: "")
+        item.target = self
+        item.representedObject = q.rawValue
+        item.indentationLevel = 1
+        return (q, item)
+    })
 
     private var display: VirtualDisplay?
     private var starting = false
@@ -59,6 +89,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         toggleItem.target = self
         menu.addItem(toggleItem)
+        menu.addItem(.separator())
+        let qualityHeader = NSMenuItem(title: "Calidad", action: nil, keyEquivalent: "")
+        qualityHeader.isEnabled = false
+        menu.addItem(qualityHeader)
+        for q in Quality.allCases { menu.addItem(qualityItems[q]!) }
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Salir de TabMonitor", action: #selector(NSApplication.terminate(_:)),
                                 keyEquivalent: "q"))
@@ -94,6 +129,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         deactivate()
+    }
+
+    /// Se aplica en caliente: la transmisión vuelve a arrancar con un `config` nuevo.
+    @objc private func chooseQuality(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let q = Quality(rawValue: raw), q != quality else { return }
+        quality = q
+        refreshMenu()
+        logger.notice("calidad: \(q.title, privacy: .public)")
+        if streamer != nil, let hello, server.isConnected {
+            Task { await startStreaming(hello) }
+        }
     }
 
     @objc private func toggle() {
@@ -167,7 +213,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         await ready.value
         guard self.display === display, server.isConnected, streamer == nil else { return }
 
-        let px = display.pixelSize
+        var px = display.pixelSize
+        if let w = quality.streamWidth, w < px.width {
+            px = (w, w * px.height / px.width)
+        }
         var created: Streamer?
         do {
             created = try Streamer(width: px.width, height: px.height, server: server)
@@ -226,6 +275,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             toggleItem.title = "Activar monitor"
         }
         clientItem.title = streamer != nil ? "Tablet: transmitiendo" : "Tablet: esperando conexión"
+        for (q, item) in qualityItems { item.state = q == quality ? .on : .off }
     }
 
     private func showError(_ message: String, detail: String) {

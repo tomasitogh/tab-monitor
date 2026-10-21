@@ -8,7 +8,7 @@ Cada hito se prueba en la tablet real antes de pasar al siguiente. El MVP es el 
 | 1. Monitor virtual | hecho, probado en la Mac (2026-10-20) |
 | 2. Captura y codificación | hecho, probado en la Mac (2026-10-20) |
 | 3. Visor Android por cable (MVP) | hecho, probado en la tablet (2026-10-21) |
-| 4. Latencia excelente | — |
+| 4. Latencia excelente | en curso: atraso de captura arreglado, calidad Nítida/Rápida en el menú |
 | 5. Enchufar y usar | — |
 | 6. Toque y lápiz (opcional) | — |
 

@@ -30,6 +30,26 @@ Cada cambio que afecte la latencia, con su medición antes y después.
 | 2026-10-21 | Tablet: decoder `OMX.qcom.video.decoder.avc` en vez de `c2.qti.avc.decoder` | decode 125 ms (a 10 fps) | decode 19 ms | `c2.qti` retiene cada frame hasta que llega el siguiente, aun con SPS de 1 referencia. Con OMX y `vendor.qti-ext-dec-low-latency`, no. |
 | 2026-10-21 | Mac: `ReferenceBufferCount` = 1 y `EnableLTR` = false | SPS con 11 referencias y LTR | SPS con 1 referencia, `max_dec_frame_buffering` = 1 | Sin el modo de baja latencia el decoder retenía 11 frames (1,13 s a 10 fps): decide cuánto retener por el SPS. |
 | 2026-10-21 | Las dos anteriores juntas, punta a punta | 140–155 / 155–175 ms | 32–38 / 41–48 ms | Patrón a 10 fps; latencia medida en la tablet con el reloj de la Mac. |
+| 2026-10-21 | Mac: el encoder recibe frames desde su propia cola, nunca desde la de captura | 105–167 / 174–179 ms | 45–47 / 58–62 ms | Patrón a 60 fps, 2560×1600. `EncodeFrame` bloqueaba ~19 ms y ScreenCaptureKit llegaba a 120 ms de atraso. |
+| 2026-10-21 | Calidad "Rápida": se transmite a 1920×1200 y la tablet lo estira | 45–47 / 58–62 ms | 25–29 / 35–49 ms | Patrón a 60 fps. Encoder 19 → 12–13 ms, decode 19 → 14 ms. Opción del menú; "Nítida" (2560×1600) sigue siendo la predeterminada. |
+| 2026-10-21 | Probado sin efecto | — | — | Mac: `MaximizePowerEfficiency` = false (ruido); `ExpectedFrameRate` 120 rompe el encoder. Tablet: `KEY_OPERATING_RATE` máximo (decode igual); AUD al final de cada frame y `vendor.qti-ext-dec-picture-order` (no cambian la retención de `c2.qti`). |
+
+## Desglose (hito 4)
+
+2026-10-21, patrón a 60 fps. "Llegada" es la hora en que la tablet terminó de leer el frame, en
+el reloj de la Mac, menos el vsync de captura: incluye la Mac y el transporte.
+
+| Tramo | Nítida (2560×1600) | Rápida (1920×1200) |
+|---|---|---|
+| Captura (vsync → callback) | 0,1–0,2 ms | ~0,1 ms |
+| Encoder del M1 | 19 ms (a veces 11–13) | 12–13 ms |
+| USB + adb (llegada − captura+codificación en la Mac) | 2–4 ms | 2–4 ms |
+| Decode en la tablet | 18–19 ms | 13–14 ms |
+| Punta a punta hasta soltar el buffer | 45–47 ms (p95 58–62) | 25–29 ms (p95 35–49) |
+| Hasta que se ve (vsync de la tablet) | +0–17 ms, sin medir | igual |
+
+El cable no influye: la tablet negocia USB 3 a 5 Gb/s (por un hub USB 3) y el video usa menos de
+35 Mbps.
 
 ## Mediciones de punta a punta (hito 3)
 

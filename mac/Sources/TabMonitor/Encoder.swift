@@ -38,7 +38,7 @@ final class Encoder {
         var next: Pending?
     }
     private let slot = OSAllocatedUnfairLock(initialState: Slot())
-    /// El frame que esperaba se manda desde acá, no desde el callback de VideoToolbox.
+    /// Los frames se mandan al encoder desde acá, nunca desde la captura ni desde el callback.
     private let submitQueue = DispatchQueue(label: "tabmonitor.encode", qos: .userInteractive)
 
     enum Failure: Error, CustomStringConvertible {
@@ -110,7 +110,10 @@ final class Encoder {
             return (false, replaced)
         }
         if replaced { onSkip?() }
-        if submit { submitToEncoder(frame) }
+        // Nunca desde la cola de captura: VTCompressionSessionEncodeFrame puede bloquear lo que
+        // dura la codificación, y entonces ScreenCaptureKit acumula frames (medido: 120 ms de
+        // atraso a 60 fps con el encoder en 19 ms).
+        if submit { submitQueue.async { self.submitToEncoder(frame) } }
     }
 
     /// Termina un frame y, si espera uno más nuevo, lo manda.

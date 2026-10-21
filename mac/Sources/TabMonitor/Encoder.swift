@@ -74,6 +74,8 @@ final class Encoder {
             // Sin keyframes periódicos: solo al empezar o bajo pedido.
             (kVTCompressionPropertyKey_MaxKeyFrameInterval, Int32.max as CFNumber),
             (kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, 0 as CFNumber),
+            (kVTCompressionPropertyKey_ReferenceBufferCount, 1 as CFNumber),
+            (kVTCompressionPropertyKey_EnableLTR, kCFBooleanFalse),
             // MaxFrameDelayCount y PrioritizeEncodingSpeedOverQuality no van: con
             // EnableLowLatencyRateControl el encoder del M1 las rechaza (-12900) porque ya
             // entrega cada frame sin demora.

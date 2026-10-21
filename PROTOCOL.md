@@ -46,7 +46,7 @@ el primer keyframe.
 - La hora de la Mac (`mac` en `pong` y la hora de captura del video) sale del mismo reloj
   monotónico de la Mac; el video en µs y el `pong` en ms.
 - La hora de la tablet (`ts` del `ping`) sale de un reloj monotónico de la tablet
-  (`SystemClock.elapsedRealtimeNanos`).
+  (`System.nanoTime`).
 - Desfase estimado: `mac − (envío + recepción) / 2`, usando las horas de la tablet en que salió el
   `ping` y llegó el `pong`. Se toma el de menor ida y vuelta de las últimas muestras.
 - Latencia de un frame: hora en que se muestra (en la tablet, pasada al reloj de la Mac)

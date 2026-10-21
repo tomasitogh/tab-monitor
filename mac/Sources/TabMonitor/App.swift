@@ -168,15 +168,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard self.display === display, server.isConnected, streamer == nil else { return }
 
         let px = display.pixelSize
+        var created: Streamer?
         do {
-            let created = try Streamer(width: px.width, height: px.height, server: server)
+            created = try Streamer(width: px.width, height: px.height, server: server)
+            guard let created else { return }
             streamer = created
             refreshMenu()
             try await created.start(displayID: display.displayID)
         } catch {
+            logger.error("no se pudo transmitir: \(String(describing: error), privacy: .public)")
+            // Solo si sigue siendo el actual: una reconexión rápida pudo haber arrancado otro.
+            guard streamer === created else { return }
             stopStream()
             refreshMenu()
-            logger.error("no se pudo transmitir: \(String(describing: error), privacy: .public)")
             if (error as NSError).domain == "com.apple.ScreenCaptureKit.SCStreamErrorDomain" {
                 showError("TabMonitor necesita permiso de Grabación de pantalla.",
                           detail: "Activalo en Ajustes del Sistema › Privacidad y seguridad › Grabación de pantalla y volvé a conectar.\n\n\(error)")

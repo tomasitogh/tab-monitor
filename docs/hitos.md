@@ -7,7 +7,7 @@ Cada hito se prueba en la tablet real antes de pasar al siguiente. El MVP es el 
 | 0. Validaciones (sin código) | 5 de 6 hechas (2026-10-20); falta medir Duet |
 | 1. Monitor virtual | hecho, probado en la Mac (2026-10-20) |
 | 2. Captura y codificación | hecho, probado en la Mac (2026-10-20) |
-| 3. Visor Android por cable (MVP) | — |
+| 3. Visor Android por cable (MVP) | hecho, probado en la tablet (2026-10-21) |
 | 4. Latencia excelente | — |
 | 5. Enchufar y usar | — |
 | 6. Toque y lápiz (opcional) | — |
@@ -114,4 +114,37 @@ Encontrado al probar:
   que correr `Scripts/view-stream.py` desde una terminal propia.
 - Un proceso lanzado con `&` en una shell no interactiva ignora SIGINT: cortar el cliente de
   prueba con SIGTERM.
+
+## Hito 3: visor Android por cable (MVP)
+
+Criterio: la tablet muestra el monitor virtual nítido, se arrastran ventanas y se ven fluidas,
+y al cerrar el visor el monitor desaparece de la Mac. Latencia de punta a punta medida.
+
+Para probarlo:
+
+```
+cd android
+./gradlew testDebugUnitTest assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb reverse tcp:8081 tcp:8081
+adb shell am start -n dev.tabmonitor/.MainActivity
+adb logcat -s TabMonitor
+```
+
+Con la TabMonitor de la Mac abierta. Un toque en la tablet muestra fps, latencia, decode y ping.
+
+Resultado (2026-10-21): cumple. Se ve nítido a 2560×1600 y es usable para escribir. Latencia de
+punta a punta de 35–50 ms de promedio en uso real, con picos (detalle en docs/latency.md).
+
+Encontrado al probar:
+- El decoder que elige Android (`c2.qti.avc.decoder`) retiene un frame; `OMX.qcom.video.decoder.avc`
+  con `vendor.qti-ext-dec-low-latency.enable` no. Para comparar:
+  `adb shell am start -S -n dev.tabmonitor/.MainActivity --es decoder c2.qti.avc.decoder`.
+- El decoder decide cuántos frames retener por el SPS: la Mac pide 1 referencia y sin LTR.
+- `OnFrameRenderedListener` devuelve horas falsas en `c2.qti`; se mide al soltar el buffer.
+- Una reconexión rápida podía cortar la transmisión nueva por el error de un arranque viejo.
+- El SDK de Android se instaló con `brew install --cask android-commandlinetools` y `sdkmanager`
+  (plataforma 35, build-tools 35); Gradle corre con el JDK de Android Studio.
+- Al conectar, el decoder todavía no arrancó y llegan más de 3 frames: se tiran y se pide un
+  keyframe (un aviso en el log, sin efecto visible).
 

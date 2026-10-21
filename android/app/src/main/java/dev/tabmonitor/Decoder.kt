@@ -121,9 +121,9 @@ class Decoder(private val surface: Surface, private val listener: Listener, priv
             setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, width * height)   // un keyframe entra holgado
             setInteger(MediaFormat.KEY_PRIORITY, 0)                       // tiempo real
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
-            // Claves de Qualcomm: modo de baja latencia y salida en orden de decodificación, sin esperar
-            // a llenar el DPB (el SPS de VideoToolbox declara 11 frames). Medido en la P11 Pro con
-            // OMX.qcom: sin la segunda, el decoder retenía ~2 frames (37 ms a 52 fps, 400 ms a 3 fps).
+            // Claves de Qualcomm: modo de baja latencia y salida en orden de decodificación. Medido en
+            // la P11 Pro: lo que evita que el decoder retenga frames es OMX.qcom (ver decoderName) con
+            // un SPS de 1 referencia; picture-order no cambió nada medible, pero no molesta.
             setInteger("vendor.qti-ext-dec-low-latency.enable", 1)
             setInteger("vendor.qti-ext-dec-picture-order.enable", 1)
         }

@@ -79,6 +79,26 @@ muy poco movimiento (0,1 Mbps): la Mac captura y codifica en 5–12 ms, pero la 
 tiene un p95 de 66–97 ms. El primer frame después de un reposo tarda en el camino (USB, adb o la
 tablet saliendo de reposo).
 
+### Los picos están en adb
+
+Prueba con un frame cada 10 s (`testsrc2` a 0,1 fps en el monitor virtual), 2 minutos por
+variante. En los intervalos con pico, la Mac escribe al socket de adb en 0,1 ms y captura más
+codifica con p95 ≤ 31 ms, pero la llegada a la tablet tiene p95 de 55–140 ms: la demora está
+entre el servidor de adb de la Mac, el USB, `adbd` y la app.
+
+| Variante | Intervalos con video | Llegada prom / peor | Intervalos con llegada > 40 ms |
+|---|---|---|---|
+| Ping cada 1 s (actual) | 26 | 13,9 / 139,6 ms | 3 |
+| Ping cada 100 ms como latido | 45 | 16,2 / 102,2 ms | 12 |
+| `ADB_LIBUSB=0` | 30 | 21,3 / 101,4 ms | 5 |
+| `ADB_LIBUSB=1` | 17 | 22,8 / 49,4 ms | 3 |
+
+Ninguna variante los saca (las muestras son chicas y hubo actividad propia del usuario). El
+`adbd` de Android 11 no ofrece `delayed_ack`: adb manda cada frame en un paquete y espera el
+OKAY de la tablet antes del siguiente, así que si `adbd` tarda en despertarse los frames se
+acumulan en el servidor de adb. Sacarlos pide otro transporte (por ejemplo, Android Open
+Accessory: USB directo, sin adb).
+
 Contra el objetivo (promedio < 45, p95 < 60, nunca > 80 en pantalla): el promedio queda en ~49 y
 los picos lo superan. El objetivo suponía 0–17 ms para mostrar; son 25.
 

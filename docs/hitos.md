@@ -8,7 +8,7 @@ Cada hito se prueba en la tablet real antes de pasar al siguiente. El MVP es el 
 | 1. Monitor virtual | hecho, probado en la Mac (2026-10-20) |
 | 2. Captura y codificación | hecho, probado en la Mac (2026-10-20) |
 | 3. Visor Android por cable (MVP) | hecho, probado en la tablet (2026-10-21) |
-| 4. Latencia excelente | en curso: atraso de captura arreglado, calidad Nítida/Rápida en el menú |
+| 4. Latencia excelente | hecho (2026-10-21): ~49 ms en pantalla en Rápida; picos ocasionales por adb |
 | 5. Enchufar y usar | — |
 | 6. Toque y lápiz (opcional) | — |
 
@@ -147,4 +147,37 @@ Encontrado al probar:
   (plataforma 35, build-tools 35); Gradle corre con el JDK de Android Studio.
 - Al conectar, el decoder todavía no arrancó y llegan más de 3 frames: se tiran y se pide un
   keyframe (un aviso en el log, sin efecto visible).
+
+## Hito 4: latencia excelente
+
+Resultado (2026-10-21): cerrado con estos números (detalle en docs/latency.md).
+
+| | Nítida (2560×1600) | Rápida (1920×1200) |
+|---|---|---|
+| Al soltar el frame en la tablet, a 60 fps | 45–47 ms (p95 58–62) | 25–29 ms (p95 35–49) |
+| En pantalla (+25 ms de SurfaceFlinger) | ~70 ms | ~50 ms |
+| Uso real, 6 minutos | — | ~49 ms de promedio en pantalla |
+
+Hecho en este hito: captura que nunca espera al encoder, calidad Nítida/Rápida en el menú,
+`releaseOutputBuffer` con la hora de la tablet, y medición de cada tramo (llegada, decode y
+pantalla con SurfaceFlinger).
+
+No cumple "nunca más de 80 ms": quedan picos ocasionales de 100–140 ms en el transporte de adb.
+El `adbd` de Android 11 no tiene `delayed_ack` y espera un OKAY por cada frame; si `adbd` tarda
+en despertarse, los frames se acumulan en el servidor de adb de la Mac. Un latido de 100 ms y
+`ADB_LIBUSB` no los sacan.
+
+### Posible paso siguiente: Android Open Accessory (no planificado)
+
+Reemplazar `adb reverse` por AOA: USB directo con endpoints bulk, sin `adbd` en el camino.
+
+- Gana: sin la espera de un OKAY por frame, deberían desaparecer los picos y quizá bajar algunos
+  ms el promedio. Además Android puede abrir el visor solo al enchufar (filtro de accesorio),
+  lo que también sirve para "enchufar y usar".
+- Cuesta: en la Mac, el handshake de AOA y las transferencias bulk con IOKit (IOUSBHost), sin
+  dependencias; en Android, `UsbManager`/`UsbAccessory` y un aviso de permiso la primera vez
+  (se puede marcar "siempre"). La tablet se reenumera como accesorio (VID 0x18D1, PID
+  0x2D00/0x2D01), lo que puede convivir con adb o no según el modo.
+- Cómo empezar: una prueba mínima que mande frames por AOA y mida la llegada contra adb, antes
+  de tocar la app.
 

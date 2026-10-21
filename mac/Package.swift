@@ -10,5 +10,6 @@ let package = Package(
     ],
     targets: [
         .executableTarget(name: "TabMonitor"),
+        .testTarget(name: "TabMonitorTests", dependencies: ["TabMonitor"]),
     ]
 )

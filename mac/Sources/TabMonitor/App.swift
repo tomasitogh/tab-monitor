@@ -3,7 +3,10 @@ import os
 
 let logger = Logger(subsystem: "dev.tabmonitor.mac", category: "app")
 
-/// App de barra de menú: crea y destruye el monitor virtual.
+/// App de barra de menú: crea y destruye el monitor virtual y lo transmite a la tablet.
+///
+/// Cuando una tablet se conecta y manda `hello`, se crea el monitor (si no estaba), se responde
+/// `config` y empieza el video; al desconectarse, el monitor se destruye si lo creó la conexión.
 ///
 /// VirtualDisplay necesita el event loop de AppKit (ver sus comentarios), por eso la app corre
 /// con `NSApplication.run()` y política `.accessory`, sin ícono en el Dock.
@@ -24,13 +27,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let scale = 2
     private let refreshHz = 60.0
     private let productID: UInt32 = 0x0010
+    private let port: UInt16 = 8081
 
     private var statusItem: NSStatusItem!
     private let stateItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let clientItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let toggleItem = NSMenuItem(title: "", action: #selector(toggle), keyEquivalent: "")
 
     private var display: VirtualDisplay?
     private var starting = false
+    /// Termina cuando el monitor está en su modo y ubicado.
+    private var ready: Task<Void, Never>?
+    /// El monitor lo creó la conexión de la tablet, no el menú: se destruye al desconectarse.
+    private var displayForTablet = false
+
+    private lazy var server = Server(port: port)
+    private var streamer: Streamer?
+    /// El hello de la tablet conectada, para volver a transmitir si el monitor se reactiva desde el menú.
+    private var hello: Wire.Hello?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -40,6 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         stateItem.isEnabled = false
         menu.addItem(stateItem)
+        clientItem.isEnabled = false
+        menu.addItem(clientItem)
         menu.addItem(.separator())
         toggleItem.target = self
         menu.addItem(toggleItem)
@@ -54,6 +70,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             logger.error("CGVirtualDisplay no disponible: \(problems.joined(separator: "; "), privacy: .public)")
         }
 
+        server.onHello = { [weak self] hello in Task { @MainActor in await self?.startStreaming(hello) } }
+        server.onDisconnect = { [weak self] in
+            Task { @MainActor in
+                self?.hello = nil
+                self?.stopStreaming()
+            }
+        }
+        server.onKeyRequest = { [weak self] in Task { @MainActor in self?.streamer?.requestKeyframe() } }
+        server.onStats = { stats in
+            logger.notice("tablet: \(stats.fps ?? 0) fps, latencia \(stats.latencyMs?.avg ?? 0)/\(stats.latencyMs?.p95 ?? 0) ms, descartados \(stats.dropped ?? 0)")
+        }
+        do {
+            try server.start()
+            logger.notice("escuchando en 127.0.0.1:\(self.port)")
+        } catch {
+            showError("No se pudo abrir el puerto \(port).", detail: "\(error)")
+        }
+
         // Para diagnosticar sin tocar el menú: open TabMonitor.app --args --activate
         if CommandLine.arguments.contains("--activate") { activate() }
     }
@@ -63,7 +97,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggle() {
-        if display == nil { activate() } else { deactivate() }
+        if display != nil {
+            deactivate()
+        } else if let hello, server.isConnected {
+            Task { await startStreaming(hello) }
+        } else {
+            activate()
+        }
     }
 
     private func activate() {
@@ -93,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshMenu()
         logger.notice("monitor creado, displayID \(created.displayID)")
 
-        Task { @MainActor in
+        ready = Task { @MainActor in
             let online = await created.waitUntilOnline()
             guard self.display === created else { return }
             if !online {
@@ -112,10 +152,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func startStreaming(_ hello: Wire.Hello) async {
+        logger.notice("hello: \(hello.w)×\(hello.h) px, \(hello.model ?? "?", privacy: .public), Android \(hello.android ?? "?", privacy: .public)")
+        if hello.w != widthPt * scale || hello.h != heightPt * scale {
+            logger.notice("la tablet pidió \(hello.w)×\(hello.h); por ahora el monitor es siempre \(self.widthPt * self.scale)×\(self.heightPt * self.scale)")
+        }
+        self.hello = hello
+        stopStream()
+        if display == nil {
+            activate()
+            displayForTablet = display != nil
+        }
+        guard let display, let ready else { return }
+        await ready.value
+        guard self.display === display, server.isConnected, streamer == nil else { return }
+
+        let px = display.pixelSize
+        do {
+            let created = try Streamer(width: px.width, height: px.height, server: server)
+            streamer = created
+            refreshMenu()
+            try await created.start(displayID: display.displayID)
+        } catch {
+            stopStream()
+            refreshMenu()
+            logger.error("no se pudo transmitir: \(String(describing: error), privacy: .public)")
+            if (error as NSError).domain == "com.apple.ScreenCaptureKit.SCStreamErrorDomain" {
+                showError("TabMonitor necesita permiso de Grabación de pantalla.",
+                          detail: "Activalo en Ajustes del Sistema › Privacidad y seguridad › Grabación de pantalla y volvé a conectar.\n\n\(error)")
+            }
+        }
+    }
+
+    /// Fin de la conexión: corta el video y quita el monitor si lo había creado la tablet.
+    private func stopStreaming() {
+        stopStream()
+        if displayForTablet { deactivate() }
+        refreshMenu()
+    }
+
+    private func stopStream() {
+        streamer?.stop()
+        streamer = nil
+    }
+
     private func deactivate() {
+        stopStream()
         guard let display else { return }
         display.destroy()
         self.display = nil
+        ready = nil
+        displayForTablet = false
         starting = false
         refreshMenu()
         logger.notice("monitor destruido")
@@ -134,6 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             stateItem.title = "Monitor: apagado"
             toggleItem.title = "Activar monitor"
         }
+        clientItem.title = streamer != nil ? "Tablet: transmitiendo" : "Tablet: esperando conexión"
     }
 
     private func showError(_ message: String, detail: String) {

@@ -4,9 +4,9 @@ Cada hito se prueba en la tablet real antes de pasar al siguiente. El MVP es el 
 
 | Hito | Estado |
 |---|---|
-| 0. Validaciones (sin código) | 4 de 6 hechas (2026-10-20); faltan Duet y límite de carga |
+| 0. Validaciones (sin código) | 5 de 6 hechas (2026-10-20); falta medir Duet |
 | 1. Monitor virtual | hecho, probado en la Mac (2026-10-20) |
-| 2. Captura y codificación | — |
+| 2. Captura y codificación | hecho, probado en la Mac (2026-10-20) |
 | 3. Visor Android por cable (MVP) | — |
 | 4. Latencia excelente | — |
 | 5. Enchufar y usar | — |
@@ -46,8 +46,8 @@ Anotá cada resultado acá.
       en cámara lenta (por ejemplo un cronómetro en milisegundos en la Mac) y anotar la latencia
       en docs/latency.md.
       Resultado:
-- [ ] **Límite de carga.** ¿Existe en Ajustes › Batería? ¿Cómo se llama?
-      Resultado:
+- [x] **Límite de carga.** ¿Existe en Ajustes › Batería? ¿Cómo se llama?
+      Resultado: sí, "Modo de protección de la batería": mantiene la carga entre 40 % y 60 %.
 
 Criterio: las cuatro primeras respondidas. Si el decoder no llega a 2560×1600 a 60, se arranca
 con el preset 1920×1200 a 1×.
@@ -82,3 +82,36 @@ es un comando interno).
 Firma: el certificado Apple Development necesitó el intermedio Apple WWDR CA G3
 (apple.com/certificateauthority) en el llavero; sin él `codesign` falla con
 errSecInternalComponent y `make-app.sh` cae a firma ad hoc.
+
+## Hito 2: captura y codificación
+
+Criterio: con una conexión de prueba, la Mac transmite el monitor virtual en H.264 según
+PROTOCOL.md, con el tiempo de captura más codificación medido y anotado en docs/latency.md.
+
+Para probarlo:
+
+```
+cd mac
+swift test
+Scripts/make-app.sh --install --open
+Scripts/view-stream.py --no-view --save /tmp/prueba.h264   # hace de tablet; Ctrl-C para cortar
+```
+
+Resultado (2026-10-20): cumple. 2560×1600, H.264 High 5.1 sin B-frames (lo confirma ffprobe),
+50–57 fps, captura más codificación de 6–7 ms de promedio (p95 13–15 ms), sin frames descartados
+al enviar. Los cuadros decodificados del stream grabado muestran el monitor virtual nítido.
+Detalle en docs/latency.md.
+
+Encontrado al probar:
+- El `displayTime` de ScreenCaptureKit puede quedar en el futuro; restarlo sin signo hacía
+  crashear la app por overflow.
+- Hace falta el permiso de Grabación de pantalla. Con la firma Apple Development no se vuelve a
+  pedir tras cada compilación.
+- Al recrear el monitor (mismo vendor, producto y número de serie), macOS devuelve ahí las
+  ventanas que estuvieron en él antes. Sin la tablet mostrándolo, quedan invisibles hasta que se
+  desactiva. Con la tablet es lo deseable.
+- ffplay lanzado en segundo plano desde una shell no activa su ventana: para verlo en vivo hay
+  que correr `Scripts/view-stream.py` desde una terminal propia.
+- Un proceso lanzado con `&` en una shell no interactiva ignora SIGINT: cortar el cliente de
+  prueba con SIGTERM.
+

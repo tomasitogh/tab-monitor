@@ -4,8 +4,9 @@ Para retomar el desarrollo en otra sesión o cuenta. Estado al 2026-10-21.
 
 ## Dónde está todo
 
-- Rama `claude/kickoff-hito-1`, con PR abierto a `main`:
-  https://github.com/tomasitogh/tab-monitor/pull/1 (hitos 0 a 5). El repo no tiene CI.
+- Todo en `main` (el PR #1 con los hitos 0 a 5 ya está mergeado). El repo no tiene CI.
+- Distribución: cask en el tap `tomasitogh/homebrew-tap`, zip en los GitHub Releases de este
+  repo, publicado con `mac/Scripts/release.sh` (hito 7).
 - [CLAUDE.md](../CLAUDE.md): arquitectura, comandos y reglas no negociables.
 - [docs/hitos.md](hitos.md): qué se hizo en cada hito, cómo probarlo y lo encontrado al probar.
 - [docs/latency.md](latency.md): cada cambio de latencia con su medición antes y después, y
@@ -25,6 +26,7 @@ Para retomar el desarrollo en otra sesión o cuenta. Estado al 2026-10-21.
 | 4. Latencia | hecho: ~49 ms en pantalla en Rápida, ~70 ms en Nítida; picos por adb |
 | 5. Enchufar y usar | hecho: con TabMonitor abierta, enchufar la tablet y anda sola |
 | 6. Toque y lápiz | opcional, sin empezar |
+| 7. Distribución con Homebrew | en curso: falta probar y publicar el primer release |
 
 Funciona en el uso diario del usuario. Tests: 6 en la Mac (`swift test`), 7 en Android
 (`./gradlew testDebugUnitTest`).
@@ -50,10 +52,9 @@ El usuario fue explícito: después del hito 5 no avanzar con estos temas hasta 
   - Identidad del monitor (vendor/product/serial) fija: debería ser una por tablet para que
     macOS recuerde dónde va cada una.
   - Una tablet a la vez (la primera autorizada en adb).
-- **Distribución.** Developer ID + notarización (Apple Developer Program, pago; el certificado
-  actual es gratis y solo sirve en las Macs del usuario), fuera de la Mac App Store por la API
-  privada, revisar si se puede incluir el binario de adb en la app, APK firmado para producción,
-  instalador y actualizaciones. `CLAUDE.md` todavía dice "uso personal".
+- **Distribución, lo que falta después del hito 7.** Developer ID + notarización (Apple
+  Developer Program, pago) para sacar el aviso de Gatekeeper; build universal para Intel;
+  releases desde CI.
 - **Android Open Accessory** para sacar los picos de adb: detalle en docs/hitos.md, hito 4.
 - **Visor más liviano**: leer el socket directo al buffer del codec (SocketChannel) ahorraría
   ~10 % de CPU de la tablet.

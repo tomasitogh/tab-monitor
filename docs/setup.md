@@ -61,3 +61,23 @@ Después enchufar la tablet. Tests del visor:
 cd android
 JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew testDebugUnitTest
 ```
+
+## Publicar una versión
+
+Una sola vez:
+
+1. Clave del visor: `mac/Scripts/make-apk-key.sh`. Deja `~/.tabmonitor/release.jks` y su
+   contraseña en el llavero (`dev.tabmonitor.apk`). **Hacele backup a las dos**: sin la misma
+   clave, Android no deja actualizar el visor y cada tablet tendría que desinstalarlo.
+2. `gh auth login` y el tap: `gh repo create tomasitogh/homebrew-tap --public`.
+
+Cada versión, desde `main` limpio y pusheado:
+
+```
+cd mac
+Scripts/release.sh 0.2.0
+```
+
+Corre los tests, arma la app firmada, crea el tag `v0.2.0` y el GitHub Release con el zip, y
+actualiza `Casks/tabmonitor.rb` en el tap. Los usuarios actualizan con
+`brew upgrade --cask tabmonitor`. Con `--dry-run` solo arma el zip y el cask en `mac/.build/dist/`.

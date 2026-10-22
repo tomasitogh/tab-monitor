@@ -1,0 +1,28 @@
+cask "tabmonitor" do
+  version "@VERSION@"
+  sha256 "@SHA256@"
+
+  url "https://github.com/tomasitogh/tab-monitor/releases/download/v#{version}/TabMonitor-#{version}.zip"
+  name "TabMonitor"
+  desc "Usa una tablet Android como monitor extendido por cable USB"
+  homepage "https://github.com/tomasitogh/tab-monitor"
+
+  depends_on arch: :arm64
+  depends_on cask: "android-platform-tools"
+  depends_on macos: :sonoma
+
+  app "TabMonitor.app"
+
+  uninstall quit: "dev.tabmonitor.mac"
+
+  zap trash: "~/Library/Preferences/dev.tabmonitor.mac.plist"
+
+  caveats <<~EOS
+    TabMonitor no está notarizada por Apple. La primera vez que la abras, macOS va a decir
+    que no puede verificarla: andá a Ajustes del Sistema › Privacidad y seguridad y tocá
+    "Abrir igual". Después dale permiso de Grabación de pantalla cuando lo pida.
+
+    En la tablet hay que activar la depuración USB una sola vez:
+      https://github.com/tomasitogh/tab-monitor#preparar-la-tablet
+  EOS
+end

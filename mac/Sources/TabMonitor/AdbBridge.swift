@@ -169,7 +169,14 @@ final class AdbBridge {
         logger.notice("adb: preparando \(serial, privacy: .public)")
         if let apk, let apkHash, installedHash(serial) != apkHash {
             set(.preparing("instalando el visor…"))
-            let r = run(["-s", serial, "install", "-r", apk.path], timeout: 120)
+            var r = run(["-s", serial, "install", "-r", apk.path], timeout: 120)
+            // Android no actualiza sobre otra firma (debug contra release) ni a una versión
+            // anterior: se desinstala y se instala de cero.
+            if !r.ok, r.output.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") || r.output.contains("INSTALL_FAILED_VERSION_DOWNGRADE") {
+                logger.notice("adb: el visor instalado tiene otra firma o es más nuevo; se reinstala")
+                _ = run(["-s", serial, "uninstall", Self.package], timeout: 60)
+                r = run(["-s", serial, "install", apk.path], timeout: 120)
+            }
             guard r.ok else {
                 logger.error("adb install falló: \(r.output, privacy: .public)")
                 set(.failed("no se pudo instalar el visor"))

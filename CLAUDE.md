@@ -1,9 +1,9 @@
 # TabMonitor
 
 Convierte una Lenovo Tab P11 Pro (2560x1600, Snapdragon 730G, Android 11) en monitor extendido
-de una MacBook Air M1, solo por cable USB, con latencia mínima. Hoy es de uso personal; el
-usuario quiere llegar a un producto ("instalás la app, enchufás la tablet y anda"), pero otras
-tablets y la distribución esperan a que él lo pida.
+de una MacBook Air M1, solo por cable USB, con latencia mínima. El usuario quiere llegar a un
+producto ("instalás la app, enchufás la tablet y anda"). Se distribuye con Homebrew (tap propio
+y GitHub Releases), sin Developer ID por ahora; otras tablets esperan a que él lo pida.
 
 **Antes de seguir, leé [docs/handoff.md](docs/handoff.md)**: estado actual, pendientes, ideas
 estacionadas y forma de trabajo. Preparar una máquina nueva: [docs/setup.md](docs/setup.md).
@@ -22,7 +22,9 @@ estacionadas y forma de trabajo. Preparar una máquina nueva: [docs/setup.md](do
 
 ## Comandos
 - mac: swift build / swift test / Scripts/make-app.sh --install --open (compila también el visor;
-  TABMONITOR_SKIP_APK=1 para saltearlo).
+  TABMONITOR_SKIP_APK=1 para saltearlo). La versión sale del último tag vX.Y.Z.
+- publicar: mac/Scripts/release.sh X.Y.Z (--dry-run para solo armar el zip y el cask). El visor
+  se firma con la clave de ~/.tabmonitor/release.jks (Scripts/make-apk-key.sh, una sola vez).
 - android: ./gradlew testDebugUnitTest assembleDebug, con JAVA_HOME en el JDK de Android Studio
   (`/Applications/Android Studio.app/Contents/jbr/Contents/Home`). Normalmente no hace falta
   instalar a mano: AdbBridge actualiza el visor al enchufar o al reabrir TabMonitor.

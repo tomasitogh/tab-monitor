@@ -11,6 +11,7 @@ Cada hito se prueba en la tablet real antes de pasar al siguiente. El MVP es el 
 | 4. Latencia excelente | hecho (2026-10-21): ~49 ms en pantalla en Rápida; picos ocasionales por adb |
 | 5. Enchufar y usar | hecho, probado con la tablet (2026-10-21) |
 | 6. Toque y lápiz (opcional) | — |
+| 7. Distribución con Homebrew | en curso |
 
 ## Hito 0: validaciones
 
@@ -45,7 +46,11 @@ Anotá cada resultado acá.
 - [ ] **Línea de base de Duet.** Prueba gratis de Duet Display por cable; filmar las dos pantallas
       en cámara lenta (por ejemplo un cronómetro en milisegundos en la Mac) y anotar la latencia
       en docs/latency.md.
-      Resultado:
+      Resultado (2026-10-21, desde un tap local apuntando al zip del --dry-run): cumple.
+- macOS frenó la app; se aprobó con Privacidad y seguridad › "Abrir igual", como dice el README.
+  No volvió a pedir Grabación de pantalla (misma firma Apple Development que antes).
+- Al enchufar, AdbBridge vio que el visor de debug tenía otra firma, lo desinstaló e instaló el
+  de release (`versionCode` 12) y lo abrió: unos 7 s, sin tocar la tablet.
 - [x] **Límite de carga.** ¿Existe en Ajustes › Batería? ¿Cómo se llama?
       Resultado: sí, "Modo de protección de la batería": mantiene la carga entre 40 % y 60 %.
 
@@ -238,3 +243,40 @@ pool y el decoder copia directo desde ahí. Queda: ~20 % en hilos internos de Me
 copiando al buffer del codec, ~5 % de red. En la Mac la codificación la hace el motor de video;
 evitar la copia que queda por frame ganaría menos de 1 %.
 
+
+## Hito 7: distribución con Homebrew
+
+Alcance: que otra persona instale con `brew install --cask tomasitogh/tap/tabmonitor`, prepare
+la tablet una vez (depuración USB) y lo demás ande solo. Sin Developer ID: la primera vez macOS
+frena la app y hay que aprobarla en Privacidad y seguridad (el README lo explica). Solo Apple
+Silicon. Fuera de alcance: notarización, Intel, CI.
+
+Hecho:
+- Versión única: la del último tag `vX.Y.Z` en la app de Mac y en el visor; el número de build
+  es la cantidad de commits (también el `versionCode` del visor).
+- El visor se compila como release, firmado con una clave propia (`~/.tabmonitor/release.jks`,
+  contraseña en el llavero; `mac/Scripts/make-apk-key.sh`). Sin la clave, `make-app.sh` firma
+  con la de debug.
+- AdbBridge desinstala y reinstala el visor si la instalación falla por otra firma o por bajar
+  de versión (pasa una vez en cada tablet que tenía el visor de debug).
+- `mac/Scripts/release.sh X.Y.Z`: verifica main limpio e igual a origin, corre los tests de las
+  dos puntas, arma la app con `make-app.sh --release` (exige las dos firmas y sella la de la Mac
+  con la hora de Apple), la comprime, crea el tag y el GitHub Release y actualiza el cask en el
+  tap. `--dry-run` deja el zip y el cask en `mac/.build/dist/`.
+- Cask (`mac/Packaging/tabmonitor.rb.in`): arm64, macOS 14+, depende de
+  `android-platform-tools` (adb en `/opt/homebrew/bin`), avisa de Gatekeeper. Pasa
+  `brew audit --strict` y `brew style`.
+- README para usuarios: instalación, aprobar la app en la Mac, preparar la tablet (Lenovo y
+  Samsung), actualizar y desinstalar. Menú: "Cómo preparar la tablet…" y la versión.
+
+Para probarlo sin publicar:
+
+```
+cd mac
+Scripts/release.sh 0.1.0 --dry-run
+```
+
+Instalado desde un tap local apuntando al zip, macOS lo deja en cuarentena y `spctl` lo rechaza
+(origin Apple Development), igual que en la Mac de un desconocido.
+
+Resultado:

@@ -106,6 +106,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         loginItem.target = self
         menu.addItem(loginItem)
         menu.addItem(.separator())
+        let guideItem = NSMenuItem(title: "Cómo preparar la tablet…", action: #selector(openGuide), keyEquivalent: "")
+        guideItem.target = self
+        menu.addItem(guideItem)
+        let info = Bundle.main.infoDictionary
+        let versionItem = NSMenuItem(title: "Versión \(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))",
+                                     action: nil, keyEquivalent: "")
+        versionItem.isEnabled = false
+        menu.addItem(versionItem)
+        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Salir de TabMonitor", action: #selector(NSApplication.terminate(_:)),
                                 keyEquivalent: "q"))
         statusItem.menu = menu
@@ -157,6 +166,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openViewer() {
         bridge.openViewer()
+    }
+
+    @objc private func openGuide() {
+        NSWorkspace.shared.open(URL(string: "https://github.com/tomasitogh/tab-monitor#preparar-la-tablet")!)
     }
 
     /// SMAppService: la app tiene que estar en /Applications. macOS puede pedir aprobarla en
@@ -327,7 +340,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static func describe(_ state: AdbBridge.State) -> String {
         switch state {
         case .noAdb: return "Falta adb: brew install android-platform-tools"
-        case .waiting: return "Tablet: enchufala por USB"
+        case .waiting: return "Tablet: enchufala con la depuración USB activa"
         case .unauthorized: return "Tablet: aceptá \"Permitir depuración USB\" en la tablet"
         case .preparing(let what): return "Tablet: \(what)"
         case .ready: return "Tablet: esperando al visor"

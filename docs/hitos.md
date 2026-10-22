@@ -11,7 +11,7 @@ Cada hito se prueba en la tablet real antes de pasar al siguiente. El MVP es el 
 | 4. Latencia excelente | hecho (2026-10-21): ~49 ms en pantalla en Rápida; picos ocasionales por adb |
 | 5. Enchufar y usar | hecho, probado con la tablet (2026-10-21) |
 | 6. Toque y lápiz (opcional) | — |
-| 7. Distribución con Homebrew | en curso |
+| 7. Distribución con Homebrew | hecho (2026-10-21): v0.1.0 en `tomasitogh/tap` |
 
 ## Hito 0: validaciones
 
@@ -280,3 +280,7 @@ Instalado desde un tap local apuntando al zip, macOS lo deja en cuarentena y `sp
 (origin Apple Development), igual que en la Mac de un desconocido.
 
 Resultado:
+
+Publicado (2026-10-21): `v0.1.0` en https://github.com/tomasitogh/tab-monitor/releases/tag/v0.1.0
+y el cask en https://github.com/tomasitogh/homebrew-tap. `brew audit --strict --online` pasa y
+`brew fetch` baja el zip con el sha256 correcto.

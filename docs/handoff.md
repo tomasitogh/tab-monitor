@@ -26,7 +26,7 @@ Para retomar el desarrollo en otra sesión o cuenta. Estado al 2026-10-21.
 | 4. Latencia | hecho: ~49 ms en pantalla en Rápida, ~70 ms en Nítida; picos por adb |
 | 5. Enchufar y usar | hecho: con TabMonitor abierta, enchufar la tablet y anda sola |
 | 6. Toque y lápiz | opcional, sin empezar |
-| 7. Distribución con Homebrew | en curso: falta probar y publicar el primer release |
+| 7. Distribución con Homebrew | hecho: v0.1.0 publicada en el tap |
 
 Funciona en el uso diario del usuario. Tests: 6 en la Mac (`swift test`), 7 en Android
 (`./gradlew testDebugUnitTest`).

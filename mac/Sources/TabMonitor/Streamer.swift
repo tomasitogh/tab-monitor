@@ -5,7 +5,7 @@ import os
 /// Captura el monitor virtual, lo codifica y lo manda por el servidor. Uno por conexión.
 final class Streamer {
     static let fps = 60
-    static let bitrate = 35_000_000
+    let bitrate: Int
 
     private let capture = Capture()
     private let encoder: Encoder
@@ -13,9 +13,10 @@ final class Streamer {
     private let stats = StreamStats()
     private var timer: DispatchSourceTimer?
 
-    init(width: Int, height: Int, server: Server) throws {
+    init(width: Int, height: Int, bitrate: Int, server: Server) throws {
         self.server = server
-        encoder = try Encoder(width: width, height: height, fps: Self.fps, bitrate: Self.bitrate)
+        self.bitrate = bitrate
+        encoder = try Encoder(width: width, height: height, fps: Self.fps, bitrate: bitrate)
     }
 
     func start(displayID: CGDirectDisplayID) async throws {
@@ -45,7 +46,7 @@ final class Streamer {
         server.onSent = { bytes, micros in stats.sent(bytes: bytes, micros: micros) }
 
         server.sendControl(Wire.config(codec: "h264", w: encoder.width, h: encoder.height,
-                                       fps: Self.fps, bitrate: Self.bitrate))
+                                       fps: Self.fps, bitrate: bitrate))
         try await capture.start(displayID: displayID, width: encoder.width, height: encoder.height, fps: Self.fps)
 
         let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
@@ -53,7 +54,7 @@ final class Streamer {
         timer.setEventHandler { stats.logAndReset(seconds: 2) }
         timer.resume()
         self.timer = timer
-        logger.notice("transmitiendo \(encoder.width)×\(encoder.height) a \(Self.fps) fps, \(Self.bitrate / 1_000_000) Mbps")
+        logger.notice("transmitiendo \(encoder.width)×\(encoder.height) a \(Self.fps) fps, \(self.bitrate / 1_000_000) Mbps")
     }
 
     func requestKeyframe() { encoder.requestKeyframe() }

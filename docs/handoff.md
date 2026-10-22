@@ -27,6 +27,7 @@ Para retomar el desarrollo en otra sesión o cuenta. Estado al 2026-10-21.
 | 5. Enchufar y usar | hecho: con TabMonitor abierta, enchufar la tablet y anda sola |
 | 6. Toque y lápiz | opcional, sin empezar |
 | 7. Distribución con Homebrew | hecho: v0.1.0 publicada en el tap |
+| 8. Otras tablets | en curso: probado en emulador y P11 Pro; falta la S6 Lite real |
 
 Funciona en el uso diario del usuario. Tests: 6 en la Mac (`swift test`), 7 en Android
 (`./gradlew testDebugUnitTest`).
@@ -43,15 +44,8 @@ No hay trabajo técnico pendiente dentro de los hitos 0–5. Lo que sigue lo eli
 
 El usuario fue explícito: después del hito 5 no avanzar con estos temas hasta que él diga.
 
-- **Otras tablets y otros tamaños.** Hoy todo asume la P11 Pro:
-  - El monitor virtual es siempre 1280×800 pt a 2× (`mac/Sources/TabMonitor/App.swift`,
-    `widthPt`/`heightPt`); debería salir del `hello` de cada tablet.
-  - `Decoder.decoderName` prefiere `OMX.qcom.video.decoder.avc`; con MediaTek o Exynos el decoder
-    por defecto podría retener frames como `c2.qti` (medirlo con el patrón a 10 fps, ver abajo).
-  - La calidad (Nítida/Rápida) no se elige según `maxDecode` del `hello`.
-  - Identidad del monitor (vendor/product/serial) fija: debería ser una por tablet para que
-    macOS recuerde dónde va cada una.
-  - Una tablet a la vez (la primera autorizada en adb).
+- **Otras tablets, lo que queda después del hito 8.** Una tablet a la vez (la primera
+  autorizada en adb); modo vertical; HEVC.
 - **Distribución, lo que falta después del hito 7.** Developer ID + notarización (Apple
   Developer Program, pago) para sacar el aviso de Gatekeeper; build universal para Intel;
   releases desde CI.

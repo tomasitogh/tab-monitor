@@ -2,9 +2,7 @@ package dev.tabmonitor
 
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
-import android.media.MediaCodecList
 import android.media.MediaFormat
-import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
@@ -18,7 +16,7 @@ import java.util.ArrayDeque
  * Todo el estado vive en el hilo del codec. Los frames comprimidos no se pueden saltear (los que
  * siguen dependen de ellos): si se acumulan, se tiran todos y se pide un keyframe.
  */
-class Decoder(private val surface: Surface, private val listener: Listener, private val forcedName: String? = null) {
+class Decoder(private val surface: Surface, private val listener: Listener, private val name: String) {
     interface Listener {
         /** Hay que pedirle un keyframe a la Mac. */
         fun onKeyframeNeeded()
@@ -107,28 +105,13 @@ class Decoder(private val surface: Surface, private val listener: Listener, priv
 
     /** Crea el codec con el SPS y el PPS del primer keyframe. */
     private fun start(keyframe: Wire.Incoming.Video): Boolean {
-        val nals = splitNals(keyframe.annexB())
-        val sps = nals.firstOrNull { nalType(it) == 7 }
-        val pps = nals.firstOrNull { nalType(it) == 8 }
-        if (sps == null || pps == null || width == 0) {
+        val format = if (width == 0) null else DecoderChoice.format(name, width, height, keyframe.annexB())
+        if (format == null) {
             Log.w(TAG, "keyframe sin SPS/PPS o sin config todavía")
             return false
         }
-        Log.i(TAG, "SPS ${sps.joinToString("") { "%02x".format(it) }}")
-        val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
-            setByteBuffer("csd-0", java.nio.ByteBuffer.wrap(START_CODE + sps))
-            setByteBuffer("csd-1", java.nio.ByteBuffer.wrap(START_CODE + pps))
-            setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, width * height)   // un keyframe entra holgado
-            setInteger(MediaFormat.KEY_PRIORITY, 0)                       // tiempo real
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
-            // Claves de Qualcomm: modo de baja latencia y salida en orden de decodificación. Medido en
-            // la P11 Pro: lo que evita que el decoder retenga frames es OMX.qcom (ver decoderName) con
-            // un SPS de 1 referencia; picture-order no cambió nada medible, pero no molesta.
-            setInteger("vendor.qti-ext-dec-low-latency.enable", 1)
-            setInteger("vendor.qti-ext-dec-picture-order.enable", 1)
-        }
         return try {
-            val codec = MediaCodec.createByCodecName(forcedName ?: decoderName(width, height))
+            val codec = MediaCodec.createByCodecName(name)
             val lowLatencySupported = codec.codecInfo.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC)
                 .isFeatureSupported(MediaCodecInfo.CodecCapabilities.FEATURE_LowLatency)
             codec.setCallback(callback, handler)
@@ -198,9 +181,6 @@ class Decoder(private val surface: Surface, private val listener: Listener, priv
         const val TAG = "TabMonitor"
         /** Frames comprimidos esperando un buffer de entrada antes de rendirse y pedir keyframe. */
         const val MAX_PENDING = 3
-        private val START_CODE = byteArrayOf(0, 0, 0, 1)
-
-        private fun nalType(nal: ByteArray) = if (nal.isEmpty()) -1 else nal[0].toInt() and 0x1F
 
         /** Las NAL de un buffer Annex B, sin el código de inicio. */
         fun splitNals(data: ByteArray): List<ByteArray> {
@@ -217,34 +197,6 @@ class Decoder(private val surface: Surface, private val listener: Listener, priv
                 if (n + 1 < starts.size && end > s && data[end - 1] == 0.toByte()) end--   // código de 4 bytes
                 data.copyOfRange(s, end)
             }
-        }
-
-        /**
-         * El OMX de Qualcomm si está; si no, el que elija Android. Medido en la P11 Pro (Android 11)
-         * con un frame cada 100 ms: c2.qti.avc.decoder retiene cada frame hasta que llega el
-         * siguiente (decode 125 ms) aunque el SPS diga 1 referencia y 0 de reordenamiento;
-         * OMX.qcom.video.decoder.avc con vendor.qti-ext-dec-low-latency lo entrega en 19 ms.
-         */
-        fun decoderName(w: Int, h: Int): String {
-            val list = MediaCodecList(MediaCodecList.REGULAR_CODECS)
-            list.codecInfos.firstOrNull { it.name == "OMX.qcom.video.decoder.avc" }?.let { return it.name }
-            return list.findDecoderForFormat(MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, w, h))
-                ?: "OMX.google.h264.decoder"
-        }
-
-        /** Lo que el decoder de AVC por hardware dice soportar, para el `hello`. */
-        fun maxDecode(screenW: Int, screenH: Int): Triple<Int, Int, Int> {
-            val info = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.firstOrNull { info ->
-                !info.isEncoder && info.supportedTypes.any { it.equals(MediaFormat.MIMETYPE_VIDEO_AVC, true) } &&
-                    (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || info.isHardwareAccelerated)
-            } ?: return Triple(screenW, screenH, 60)
-            val caps: MediaCodecInfo.VideoCapabilities = info.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC).videoCapabilities
-            val fps = when {
-                caps.areSizeAndRateSupported(screenW, screenH, 60.0) -> 60
-                caps.isSizeSupported(screenW, screenH) -> caps.getSupportedFrameRatesFor(screenW, screenH).upper.toInt().coerceAtMost(60)
-                else -> 0
-            }
-            return Triple(caps.supportedWidths.upper, caps.supportedHeights.upper, fps)
         }
     }
 }

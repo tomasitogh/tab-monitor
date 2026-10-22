@@ -12,9 +12,13 @@ estacionadas y forma de trabajo. Preparar una máquina nueva: [docs/setup.md](do
 - mac/: app de barra de menú en Swift (macOS 14+, sin sandbox, sin dependencias).
   Monitor virtual (CGVirtualDisplay) -> ScreenCaptureKit -> VideoToolbox H.264 -> TCP 127.0.0.1:8081.
   AdbBridge escucha `adb track-devices`, instala o actualiza el visor (por SHA-256), aplica
-  `adb reverse` y lo abre. Menú: estado de la tablet, calidad Nítida/Rápida, abrir visor,
-  abrir al iniciar sesión.
+  `adb reverse` y lo abre. DisplayPlan decide, con el `hello` de cada tablet, el tamaño del
+  monitor (proporción de la tablet, 2× o 1× exacto si da un texto razonable), lo transmitido y
+  el número de serie. Menú: estado de la tablet, calidad Nítida/Rápida, tamaño Más grande/Más
+  espacio, abrir visor, abrir al iniciar sesión.
 - android/: APK Kotlin sin AndroidX, minSdk 29. Socket a 127.0.0.1:8081 -> MediaCodec -> SurfaceView.
+  DecoderChoice prueba los decoders por hardware con assets/calibration.bin (lo genera
+  `TabMonitor --calibration-clip`) y se queda con el que no retiene frames.
   El APK viaja dentro de TabMonitor.app (make-app.sh lo compila y lo copia con su hash).
 - Cable: adb reverse tcp:8081 tcp:8081.
 - Protocolo en PROTOCOL.md: encabezado de 5 bytes (tipo, largo BE), video 0x01 en Annex B,
@@ -44,9 +48,11 @@ estacionadas y forma de trabajo. Preparar una máquina nueva: [docs/setup.md](do
 - H.264 High 5.1, sin B-frames, RealTime, modo de baja latencia, 1 frame de referencia y sin LTR
   (el decoder de la tablet retiene tantos frames como declare el SPS), 35 Mbps, keyframe solo al
   conectar o bajo pedido.
-- Android: MediaCodec asíncrono con OMX.qcom.video.decoder.avc (c2.qti retiene un frame),
-  KEY_LOW_LATENCY y vendor.qti-ext-dec-low-latency, releaseOutputBuffer(i, horaActual) apenas sale
-  (con `true` toma la hora de captura de la Mac como hora de presentación).
+- Android: MediaCodec asíncrono con el decoder que elige la calibración (en la P11 Pro,
+  OMX.qcom.video.decoder.avc: c2.qti retiene un frame), KEY_LOW_LATENCY y las claves de baja
+  latencia del fabricante, releaseOutputBuffer(i, horaActual) apenas sale (con `true` toma la hora
+  de captura de la Mac como hora de presentación).
+- Si cambia la configuración del encoder, regenerar assets/calibration.bin.
 - Todo cambio que afecte la latencia se mide antes y después y se anota en docs/latency.md.
 
 ## Licencias

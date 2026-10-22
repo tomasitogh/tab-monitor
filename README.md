@@ -11,8 +11,9 @@ Nítida (2560×1600).
 
 - Mac con Apple Silicon (M1 o posterior) y macOS 14 Sonoma o posterior.
 - Tablet con Android 10 o posterior y cable USB de datos.
-- Probada en la **Lenovo Tab P11 Pro**. En otras tablets puede andar, pero el monitor se crea
-  pensado para 2560×1600 y la latencia no está medida.
+- El monitor se adapta a cada tablet: toma la proporción de su pantalla y el visor elige solo el
+  decoder de video más rápido. Probada en la **Lenovo Tab P11 Pro**; la **Galaxy Tab S6 Lite**,
+  por ahora solo en el emulador. En otras tablets debería andar, pero la latencia no está medida.
 
 ## Instalación
 
@@ -70,7 +71,8 @@ actualiza cuando hace falta.
 ## Uso
 
 Con TabMonitor abierta, enchufá la tablet: en un par de segundos aparece el monitor. El menú de
-la barra muestra el estado de la tablet y deja elegir la calidad (Nítida o Rápida). Al
+la barra muestra el estado de la tablet y deja elegir la calidad (Nítida o Rápida) y el tamaño
+(Más grande o Más espacio). Al
 desenchufarla, el monitor desaparece y las ventanas vuelven a la Mac.
 
 ## Actualizar y desinstalar

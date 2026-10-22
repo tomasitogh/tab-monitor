@@ -32,6 +32,7 @@ Cada cambio que afecte la latencia, con su medición antes y después.
 | 2026-10-21 | Las dos anteriores juntas, punta a punta | 140–155 / 155–175 ms | 32–38 / 41–48 ms | Patrón a 10 fps; latencia medida en la tablet con el reloj de la Mac. |
 | 2026-10-21 | Mac: el encoder recibe frames desde su propia cola, nunca desde la de captura | 105–167 / 174–179 ms | 45–47 / 58–62 ms | Patrón a 60 fps, 2560×1600. `EncodeFrame` bloqueaba ~19 ms y ScreenCaptureKit llegaba a 120 ms de atraso. |
 | 2026-10-21 | Calidad "Rápida": se transmite a 1920×1200 y la tablet lo estira | 45–47 / 58–62 ms | 25–29 / 35–49 ms | Patrón a 60 fps. Encoder 19 → 12–13 ms, decode 19 → 14 ms. Opción del menú; "Nítida" (2560×1600) sigue siendo la predeterminada. |
+| 2026-10-21 | Hito 8: monitor según el `hello`, decoder elegido por calibración, claves de baja latencia solo del fabricante del decoder | Nítida 45–47 / 58–62 ms; Rápida 25–29 / 35–49 ms | Nítida 44–47 / 58–62 ms; Rápida 24–27 / 31–44 ms | P11 Pro, patrón a 60 fps. Sin cambio: mismo tamaño, mismo bitrate y la calibración elige `OMX.qcom` sola (0 retenidos, 5,2 ms; `c2.qti` 3 retenidos). Decode 18,5–18,9 ms en Nítida, 12,5–12,9 en Rápida. |
 | 2026-10-21 | Probado sin efecto | — | — | Mac: `MaximizePowerEfficiency` = false (ruido); `ExpectedFrameRate` 120 rompe el encoder. Tablet: `KEY_OPERATING_RATE` máximo (decode igual); AUD al final de cada frame y `vendor.qti-ext-dec-picture-order` (no cambian la retención de `c2.qti`). |
 
 ## Desglose (hito 4)

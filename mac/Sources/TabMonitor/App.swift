@@ -15,6 +15,13 @@ let logger = Logger(subsystem: "dev.tabmonitor.mac", category: "app")
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static func main() {
+        if let i = CommandLine.arguments.firstIndex(of: "--calibration-clip"), i + 1 < CommandLine.arguments.count {
+            do { try CalibrationClip.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 1])) } catch {
+                print("no se pudo escribir el clip: \(error)")
+                exit(1)
+            }
+            exit(0)
+        }
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -22,35 +29,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         withExtendedLifetime(delegate) { app.run() }
     }
 
-    /// 1280×800 pt a 2× = 2560×1600 px, la resolución nativa de la tablet.
-    private let widthPt = 1280
-    private let heightPt = 800
-    private let scale = 2
     private let refreshHz = 60.0
     private let productID: UInt32 = 0x0010
     private let port: UInt16 = 8081
 
-    /// Cuántos píxeles viajan. El monitor virtual es siempre 2560×1600; en Rápida, ScreenCaptureKit
-    /// lo escala a 1920×1200 y la tablet lo estira. Medido a 60 fps (docs/latency.md): Nítida
-    /// 45–47 ms de promedio, Rápida 25–29 ms, porque el encoder del M1 y el decoder de la tablet
-    /// tardan en proporción a los píxeles.
-    enum Quality: String, CaseIterable {
-        case sharp, fast
-
-        var title: String {
-            switch self {
-            case .sharp: return "Nítida (2560×1600)"
-            case .fast: return "Rápida (1920×1200)"
-            }
-        }
-
-        /// Ancho transmitido; nil es el del monitor.
-        var streamWidth: Int? { self == .fast ? 1920 : nil }
-    }
+    typealias Quality = DisplayPlan.Quality
+    typealias Size = DisplayPlan.Size
 
     private var quality: Quality {
         get { UserDefaults.standard.string(forKey: "quality").flatMap(Quality.init) ?? .sharp }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "quality") }
+    }
+
+    private var size: Size {
+        get { UserDefaults.standard.string(forKey: "size").flatMap(Size.init) ?? .larger }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "size") }
+    }
+
+    /// Monitor y transmisión para la tablet conectada; sin tablet, para la P11 Pro.
+    private func plan(size: Size? = nil, quality: Quality? = nil) -> DisplayPlan {
+        DisplayPlan(hello: hello ?? DisplayPlan.p11Pro, size: size ?? self.size, quality: quality ?? self.quality)
     }
 
     private var statusItem: NSStatusItem!
@@ -58,11 +56,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let clientItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let toggleItem = NSMenuItem(title: "", action: #selector(toggle), keyEquivalent: "")
     private lazy var qualityItems: [Quality: NSMenuItem] = Dictionary(uniqueKeysWithValues: Quality.allCases.map { q in
-        let item = NSMenuItem(title: q.title, action: #selector(chooseQuality(_:)), keyEquivalent: "")
+        let item = NSMenuItem(title: "", action: #selector(chooseQuality(_:)), keyEquivalent: "")
         item.target = self
         item.representedObject = q.rawValue
         item.indentationLevel = 1
         return (q, item)
+    })
+    private lazy var sizeItems: [Size: NSMenuItem] = Dictionary(uniqueKeysWithValues: Size.allCases.map { s in
+        let item = NSMenuItem(title: "", action: #selector(chooseSize(_:)), keyEquivalent: "")
+        item.target = self
+        item.representedObject = s.rawValue
+        item.indentationLevel = 1
+        return (s, item)
     })
 
     private var display: VirtualDisplay?
@@ -100,6 +105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         qualityHeader.isEnabled = false
         menu.addItem(qualityHeader)
         for q in Quality.allCases { menu.addItem(qualityItems[q]!) }
+        let sizeHeader = NSMenuItem(title: "Tamaño", action: nil, keyEquivalent: "")
+        sizeHeader.isEnabled = false
+        menu.addItem(sizeHeader)
+        for s in Size.allCases { menu.addItem(sizeItems[s]!) }
         menu.addItem(.separator())
         openViewerItem.target = self
         menu.addItem(openViewerItem)
@@ -193,10 +202,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let raw = sender.representedObject as? String, let q = Quality(rawValue: raw), q != quality else { return }
         quality = q
         refreshMenu()
-        logger.notice("calidad: \(q.title, privacy: .public)")
+        logger.notice("calidad: \(q.rawValue, privacy: .public)")
         if streamer != nil, let hello, server.isConnected {
             Task { await startStreaming(hello) }
         }
+    }
+
+    /// Cambiar el tamaño recrea el monitor; con la tablet conectada, la transmisión vuelve a arrancar.
+    @objc private func chooseSize(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let s = Size(rawValue: raw), s != size else { return }
+        size = s
+        logger.notice("tamaño: \(s.rawValue, privacy: .public)")
+        if let hello, server.isConnected {
+            Task { await startStreaming(hello) }
+        } else if display != nil {
+            deactivate()
+            activate()
+        }
+        refreshMenu()
     }
 
     @objc private func toggle() {
@@ -216,10 +239,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                       detail: problems.joined(separator: "\n"))
             return
         }
+        let plan = plan()
         let created: VirtualDisplay
         do {
-            created = try VirtualDisplay(name: "TabMonitor", widthPt: widthPt, heightPt: heightPt,
-                                         scale: scale, refreshHz: refreshHz, productID: productID)
+            created = try VirtualDisplay(name: "TabMonitor", widthPt: plan.widthPt, heightPt: plan.heightPt,
+                                         scale: plan.scale, refreshHz: refreshHz, productID: productID,
+                                         serialNum: plan.serial)
         } catch {
             showError("No se pudo crear el monitor virtual.", detail: "\(error)")
             return
@@ -256,12 +281,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startStreaming(_ hello: Wire.Hello) async {
-        logger.notice("hello: \(hello.w)×\(hello.h) px, \(hello.model ?? "?", privacy: .public), Android \(hello.android ?? "?", privacy: .public)")
-        if hello.w != widthPt * scale || hello.h != heightPt * scale {
-            logger.notice("la tablet pidió \(hello.w)×\(hello.h); por ahora el monitor es siempre \(self.widthPt * self.scale)×\(self.heightPt * self.scale)")
-        }
+        logger.notice("hello: \(hello.w)×\(hello.h) px, \(hello.dpi ?? 0) dpi, \(hello.model ?? "?", privacy: .public), Android \(hello.android ?? "?", privacy: .public), decoder \(hello.decoder ?? "?", privacy: .public)")
         self.hello = hello
         stopStream()
+        let plan = plan()
+        logger.notice("plan: monitor \(plan.widthPt)×\(plan.heightPt) pt a \(plan.scale)×, transmite \(plan.streamWidth)×\(plan.streamHeight) a \(plan.bitrate / 1_000_000) Mbps, serie \(plan.serial)")
+        // Un monitor de otro tamaño u otra tablet (creado desde el menú o antes de cambiar el tamaño) se recrea.
+        if let display, display.widthPt != plan.widthPt || display.heightPt != plan.heightPt
+            || display.scale != plan.scale || display.serialNum != plan.serial {
+            deactivate()
+        }
         if display == nil {
             activate()
             displayForTablet = display != nil
@@ -270,13 +299,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         await ready.value
         guard self.display === display, server.isConnected, streamer == nil else { return }
 
-        var px = display.pixelSize
-        if let w = quality.streamWidth, w < px.width {
-            px = (w, w * px.height / px.width)
-        }
         var created: Streamer?
         do {
-            created = try Streamer(width: px.width, height: px.height, server: server)
+            created = try Streamer(width: plan.streamWidth, height: plan.streamHeight, bitrate: plan.bitrate, server: server)
             guard let created else { return }
             streamer = created
             refreshMenu()
@@ -324,7 +349,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 stateItem.title = "Monitor: encendiendo…"
             } else {
                 let px = display.pixelSize
-                stateItem.title = "Monitor: \(widthPt)×\(heightPt) pt (\(px.width)×\(px.height) px)"
+                stateItem.title = "Monitor: \(display.widthPt)×\(display.heightPt) pt (\(px.width)×\(px.height) px)"
             }
             toggleItem.title = "Desactivar monitor"
         } else {
@@ -334,7 +359,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clientItem.title = streamer != nil ? "Tablet: transmitiendo" : Self.describe(bridgeState)
         if case .ready = bridgeState { openViewerItem.isEnabled = streamer == nil } else { openViewerItem.isEnabled = false }
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        for (q, item) in qualityItems { item.state = q == quality ? .on : .off }
+        for (q, item) in qualityItems {
+            let p = plan(quality: q)
+            item.title = "\(q == .sharp ? "Nítida" : "Rápida") (\(p.streamWidth)×\(p.streamHeight))"
+            item.state = q == quality ? .on : .off
+        }
+        for (s, item) in sizeItems {
+            let p = plan(size: s)
+            item.title = "\(s == .larger ? "Más grande" : "Más espacio") (\(p.widthPt)×\(p.heightPt))"
+            item.state = s == size ? .on : .off
+        }
     }
 
     private static func describe(_ state: AdbBridge.State) -> String {

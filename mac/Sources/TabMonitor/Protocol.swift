@@ -49,11 +49,28 @@ enum Wire {
     }
 
     struct Hello: Decodable {
-        struct MaxDecode: Decodable { let w: Int; let h: Int; let fps: Int }
+        struct MaxDecode: Decodable {
+            let w: Int
+            let h: Int
+            /// Cuadros por segundo a la resolución de la pantalla.
+            let fps: Int
+            /// Lo más grande, con la proporción de la pantalla, que decodifica a 60 fps.
+            let w60: Int?
+            let h60: Int?
+            /// Bitrate máximo del decoder, en bits por segundo.
+            let bitrate: Int?
+        }
+        /// Pantalla en píxeles, siempre horizontal (w ≥ h).
         let w: Int
         let h: Int
+        /// Píxeles por pulgada de la pantalla; con w y h da el tamaño físico.
+        let dpi: Double?
         let model: String?
         let android: String?
+        /// Identificador estable de la tablet (un hash, no el ANDROID_ID).
+        let id: String?
+        /// El decoder que eligió el visor.
+        let decoder: String?
         let maxDecode: MaxDecode?
     }
 

@@ -12,6 +12,7 @@ Cada hito se prueba en la tablet real antes de pasar al siguiente. El MVP es el 
 | 5. Enchufar y usar | hecho, probado con la tablet (2026-10-21) |
 | 6. Toque y lápiz (opcional) | — |
 | 7. Distribución con Homebrew | hecho (2026-10-21): v0.1.0 en `tomasitogh/tap` |
+| 8. Otras tablets | probado en P11 Pro y emulador (2026-10-21); falta la S6 Lite real |
 
 ## Hito 0: validaciones
 
@@ -279,6 +280,20 @@ Scripts/release.sh 0.1.0 --dry-run
 Instalado desde un tap local apuntando al zip, macOS lo deja en cuarentena y `spctl` lo rechaza
 (origin Apple Development), igual que en la Mac de un desconocido.
 
+Probado sin la S6 Lite (2026-10-21):
+- Emulador de Android 13 a 2000×1200 y 240 dpi (como la S6 Lite): la Mac armó 1000×600 pt a 2×
+  (1250×750 con Más espacio) y la imagen llena la pantalla sin bandas. El decoder del emulador
+  (`c2.goldfish`, por software en la máquina virtual) no da abasto: no sirve para latencia.
+- Emulador a 1280×800 y 160 dpi: 960×600 pt a 2×, el camino reescalado.
+- P11 Pro: monitor y transmisión iguales que antes; la calibración tardó 0,9 s y eligió
+  `OMX.qcom` (0 retenidos, 5,2 ms) sobre `c2.qti` (3 retenidos). Latencia igual que antes
+  (docs/latency.md). En el primer intento se vio que su `dpi` es falso y daba un monitor de
+  960×600; de ahí la regla de los 1800 px.
+
+Para probar el emulador: `emulator -avd tm-s6lite -no-window -gpu swiftshader_indirect` (los AVD
+`tm-s6lite` y `tm-1280` están en `~/.android/avd`), con la tablet real desenchufada o con su
+visor cerrado: AdbBridge toma la primera tablet que ve.
+
 Resultado:
 
 Publicado (2026-10-21): `v0.1.0` en https://github.com/tomasitogh/tab-monitor/releases/tag/v0.1.0
@@ -290,3 +305,34 @@ nueva es otra app para Gatekeeper, así que pasa en cada `brew upgrade`; lo dice
 volvió a pedir Grabación de pantalla y con la tablet anduvo sin reinstalar el visor. Homebrew 7
 pide confiar en los casks de taps de terceros; `brew install --cask tomasitogh/tap/tabmonitor`
 con el nombre completo lo hace solo. Para sacar el aviso en cada versión hace falta Developer ID.
+
+## Hito 8: otras tablets
+
+Alcance: que el monitor y el visor se adapten a cualquier tablet Android 10+, empezando por la
+Galaxy Tab S6 Lite, y todo lo posible sin tenerla: emulador para tamaños y proporciones, P11 Pro
+para que nada empeore. Fuera de alcance: modo vertical, varias tablets a la vez, HEVC.
+
+Hecho:
+- `hello` con `dpi`, `id`, `decoder` y en `maxDecode` `w60`, `h60` y `bitrate` (PROTOCOL.md).
+- DisplayPlan (Mac): monitor con la proporción de la tablet. "Más grande" (por defecto) usa 2×
+  exacto desde 1800 px de ancho; en pantallas más chicas, 1× si da entre 100 y 145 pt por
+  pulgada de ancho y si no, 120 pt por pulgada a 2×. El `dpi` solo decide en pantallas chicas:
+  la P11 Pro informa 320 (el escalón de densidad) y tiene 262. "Más espacio" suma 25 % de puntos a 2× y se achica a la
+  pantalla. Nítida transmite la resolución de la tablet o lo más grande que su decoder haga a
+  60 fps; Rápida, el 75 %. 35 Mbps salvo que el decoder acepte menos. Número de serie del
+  monitor por tablet (hash del `id`). Tests: la P11 Pro da exactamente lo de antes.
+- DecoderChoice (visor): la primera vez prueba cada decoder por hardware con un clip del encoder
+  de la Mac (20 frames de 1280×800, High 5.1, 1 referencia), de a un frame, y elige el que no
+  retiene y tarda menos; lo guarda por versión de Android y del visor. Claves de baja latencia
+  por fabricante (Qualcomm, Exynos, HiSilicon, Amlogic).
+
+| Tablet | Monitor (Más grande) | Más espacio | Nítida | Rápida |
+|---|---|---|---|---|
+| P11 Pro, 2560×1600, 11,5" | 1280×800 a 2× | 1600×1000 | 2560×1600 | 1920×1200 |
+| S6 Lite, 2000×1200, 10,4" | 1000×600 a 2× | 1250×750 | 2000×1200 | 1500×900 |
+| 1280×800 en 10,6" | 1280×800 a 1× | 1600×1000 a 2× | 1280×800 | 960×600 |
+| 1280×800 en 8" | 812×508 a 2× | 1016×636 | 1280×800 | 960×600 |
+
+Resultado (2026-10-21, P11 Pro): el usuario probó el menú Tamaño (Más grande 1280×800, Más
+espacio 1600×1000) y la calidad; anda bien. Queda abierto hasta probar la S6 Lite real: enchufarla,
+ver en `adb logcat -s TabMonitor` qué decoder eligió la calibración y medir la latencia.

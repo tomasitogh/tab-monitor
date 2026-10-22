@@ -145,19 +145,38 @@ class MainActivity : Activity(), SurfaceHolder.Callback, Connection.Listener, De
 
     // --- Surface: la conexión y el decoder existen mientras haya dónde dibujar ---------------
 
+    /** Sube con cada Surface nueva y al destruirla: una calibración vieja no arranca nada. */
+    private var surfaceGeneration = 0
+
     override fun surfaceCreated(holder: SurfaceHolder) {
-        // Diagnóstico: adb shell am start -n dev.tabmonitor/.MainActivity --es decoder OMX.qcom.video.decoder.avc
-        decoder = Decoder(holder.surface, this, intent.getStringExtra("decoder"))
+        val generation = ++surfaceGeneration
+        // Diagnóstico: adb shell am start -S -n dev.tabmonitor/.MainActivity --es decoder c2.qti.avc.decoder
+        val forced = intent.getStringExtra("decoder")
+        Thread({
+            val name = forced ?: DecoderChoice.choose(this) {
+                showCard("Preparando el visor", "Probando los decoders de esta tablet.\nEs solo la primera vez.")
+            }
+            main.post { if (generation == surfaceGeneration) start(holder, name) }
+        }, "TabMonitor-calibration").start()
+    }
+
+    private fun start(holder: SurfaceHolder, decoderName: String) {
+        if (!streaming && connection == null) showCard("Esperando a la Mac", "Abrí TabMonitor en la Mac y dejá el cable enchufado.")
+        decoder = Decoder(holder.surface, this, decoderName)
         val (w, h) = screenSize()
-        val (maxW, maxH, maxFps) = Decoder.maxDecode(w, h)
-        Log.i(TAG, "pantalla ${w}×$h, decoder hasta ${maxW}×$maxH, $maxFps fps a este tamaño")
-        val hello = Wire.hello(w, h, Build.MODEL, Build.VERSION.RELEASE, maxW, maxH, maxFps)
-        connection = Connection(hello, this)
+        val caps = DecoderChoice.capabilities(decoderName, w, h)
+        val dpi = screenDpi()
+        Log.i(TAG, "pantalla ${w}×$h a $dpi dpi; $decoderName hasta ${caps.maxW}×${caps.maxH}, ${caps.fps} fps a este " +
+            "tamaño, 60 fps hasta ${caps.w60}×${caps.h60}, ${caps.bitrate / 1_000_000} Mbps")
+        val hello = Wire.Hello(w, h, dpi, Build.MODEL, Build.VERSION.RELEASE, tabletId(), decoderName,
+            caps.maxW, caps.maxH, caps.fps, caps.w60, caps.h60, caps.bitrate)
+        connection = Connection(Wire.hello(hello), this)
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
+        surfaceGeneration++
         connection?.stop()
         connection = null
         decoder?.stop()
@@ -173,6 +192,24 @@ class MainActivity : Activity(), SurfaceHolder.Callback, Connection.Listener, De
             android.util.DisplayMetrics().also { windowManager.defaultDisplay.getRealMetrics(it) }.let { it.widthPixels to it.heightPixels }
         }
         return maxOf(a, b) to minOf(a, b)   // siempre horizontal
+    }
+
+    /**
+     * Píxeles por pulgada físicos. xdpi/ydpi son los del panel; densityDpi es un escalón de Android
+     * (240, 320…) y queda solo de respaldo si el fabricante dejó xdpi en un valor absurdo.
+     */
+    @Suppress("DEPRECATION")
+    private fun screenDpi(): Double {
+        val m = android.util.DisplayMetrics().also { windowManager.defaultDisplay.getRealMetrics(it) }
+        val physical = (m.xdpi + m.ydpi) / 2.0
+        return if (physical in 80.0..800.0) physical else m.densityDpi.toDouble()
+    }
+
+    /** Hash del ANDROID_ID: estable en esta tablet (y para esta app), sin mandar el id en sí. */
+    private fun tabletId(): String {
+        val androidId = android.provider.Settings.Secure.getString(contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "?"
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(androidId.toByteArray())
+        return digest.take(4).joinToString("") { "%02x".format(it) }
     }
 
     // --- Connection.Listener (hilo de red) ---------------------------------------------------

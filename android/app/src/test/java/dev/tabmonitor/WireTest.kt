@@ -12,9 +12,11 @@ class WireTest {
     private fun message(header: String, json: String) = hex(header) + json.toByteArray()
 
     @Test fun hello() {
-        val expected = message("10 00 00 00 5E",
-            """{"w":2560,"h":1600,"model":"TB-J706F","android":"12","maxDecode":{"w":3840,"h":2160,"fps":60}}""")
-        assertArrayEquals(expected, Wire.hello(2560, 1600, "TB-J706F", "12", 3840, 2160, 60))
+        val expected = message("10 00 00 00 CB",
+            """{"w":2560,"h":1600,"dpi":262.5,"model":"TB-J706F","android":"12","id":"3f9a0c1e","decoder":"OMX.qcom.video.decoder.avc","maxDecode":{"w":3840,"h":2160,"fps":60,"w60":2560,"h60":1600,"bitrate":100000000}}""")
+        val hello = Wire.Hello(2560, 1600, 262.5, "TB-J706F", "12", "3f9a0c1e", "OMX.qcom.video.decoder.avc",
+            3840, 2160, 60, 2560, 1600, 100_000_000)
+        assertArrayEquals(expected, Wire.hello(hello))
     }
 
     @Test fun key() = assertArrayEquals(hex("12 00 00 00 00"), Wire.key())

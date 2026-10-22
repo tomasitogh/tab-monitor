@@ -33,9 +33,17 @@ object Wire {
     // El JSON de la tablet se arma a mano para que salga en el orden de PROTOCOL.md
     // (JSONObject no garantiza el orden de las claves).
 
-    fun hello(w: Int, h: Int, model: String, android: String, maxW: Int, maxH: Int, maxFps: Int): ByteArray =
-        message(HELLO, ("{\"w\":$w,\"h\":$h,\"model\":${JSONObject.quote(model)},\"android\":${JSONObject.quote(android)}," +
-            "\"maxDecode\":{\"w\":$maxW,\"h\":$maxH,\"fps\":$maxFps}}").toByteArray())
+    /** Lo que la tablet cuenta de sí misma al conectar (ver PROTOCOL.md). */
+    data class Hello(
+        val w: Int, val h: Int, val dpi: Double, val model: String, val android: String, val id: String,
+        val decoder: String, val maxW: Int, val maxH: Int, val maxFps: Int, val w60: Int, val h60: Int, val maxBitrate: Int,
+    )
+
+    fun hello(h: Hello): ByteArray =
+        message(HELLO, ("{\"w\":${h.w},\"h\":${h.h},\"dpi\":${round1(h.dpi)},\"model\":${JSONObject.quote(h.model)}," +
+            "\"android\":${JSONObject.quote(h.android)},\"id\":${JSONObject.quote(h.id)},\"decoder\":${JSONObject.quote(h.decoder)}," +
+            "\"maxDecode\":{\"w\":${h.maxW},\"h\":${h.maxH},\"fps\":${h.maxFps},\"w60\":${h.w60},\"h60\":${h.h60}," +
+            "\"bitrate\":${h.maxBitrate}}}").toByteArray())
 
     fun key(): ByteArray = message(KEY)
 

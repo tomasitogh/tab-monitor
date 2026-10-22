@@ -27,8 +27,8 @@ final class ProtocolTests: XCTestCase {
     }
 
     func testIncoming() throws {
-        let hello = message("10 00 00 00 5E",
-                            #"{"w":2560,"h":1600,"model":"TB-J706F","android":"12","maxDecode":{"w":3840,"h":2160,"fps":60}}"#)
+        let hello = message("10 00 00 00 CB",
+                            #"{"w":2560,"h":1600,"dpi":262.5,"model":"TB-J706F","android":"12","id":"3f9a0c1e","decoder":"OMX.qcom.video.decoder.avc","maxDecode":{"w":3840,"h":2160,"fps":60,"w60":2560,"h60":1600,"bitrate":100000000}}"#)
         let key = hex("12 00 00 00 00")
         let ping = message("13 00 00 00 0D", #"{"ts":123456}"#)
         let stats = message("15 00 00 00 4B",
@@ -46,6 +46,10 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(h.h, 1600)
         XCTAssertEqual(h.model, "TB-J706F")
         XCTAssertEqual(h.maxDecode?.fps, 60)
+        XCTAssertEqual(h.dpi, 262.5)
+        XCTAssertEqual(h.id, "3f9a0c1e")
+        XCTAssertEqual(h.maxDecode?.w60, 2560)
+        XCTAssertEqual(h.maxDecode?.bitrate, 100_000_000)
         guard case .key = got[1] else { return XCTFail("esperaba key") }
         guard case .ping(let p) = got[2] else { return XCTFail("esperaba ping") }
         XCTAssertEqual(p.ts, 123456)

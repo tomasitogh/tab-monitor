@@ -79,6 +79,10 @@ desenchufarla, el monitor desaparece y las ventanas vuelven a la Mac.
 brew upgrade --cask tabmonitor
 ```
 
+Como la app no está notarizada, después de cada actualización macOS la vuelve a frenar: repetí
+los pasos 1 y 2 de [Primera vez en la Mac](#primera-vez-en-la-mac). El permiso de Grabación de
+pantalla se conserva.
+
 ```
 brew uninstall --cask tabmonitor
 ```

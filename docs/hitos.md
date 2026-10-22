@@ -284,3 +284,9 @@ Resultado:
 Publicado (2026-10-21): `v0.1.0` en https://github.com/tomasitogh/tab-monitor/releases/tag/v0.1.0
 y el cask en https://github.com/tomasitogh/homebrew-tap. `brew audit --strict --online` pasa y
 `brew fetch` baja el zip con el sha256 correcto.
+
+Reinstalada desde el tap público (2026-10-21): macOS pidió aprobarla otra vez (cada compilación
+nueva es otra app para Gatekeeper, así que pasa en cada `brew upgrade`; lo dice el README), no
+volvió a pedir Grabación de pantalla y con la tablet anduvo sin reinstalar el visor. Homebrew 7
+pide confiar en los casks de taps de terceros; `brew install --cask tomasitogh/tap/tabmonitor`
+con el nombre completo lo hace solo. Para sacar el aviso en cada versión hace falta Developer ID.
